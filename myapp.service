@@ -1,0 +1,13 @@
+[Unit]
+Description=YcBOT
+After=network.target
+
+[Service]
+User=belpav
+WorkingDirectory=/home/belpav/ycbot
+Environment="PATH=/home/belpav/ycbot/venv/bin"
+ExecStart=/home/belpav/ycbot/venv/bin/gunicorn --workers 3 --bind 0.0.0.0:8000 your_app_module:your_app_instance
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
