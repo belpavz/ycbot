@@ -1,0 +1,11 @@
+    server {
+        listen 80; # Или 443, если настроен SSL
+        server_name 91.222.236.167; # Замени на IP-адрес сервера
+
+        location / {
+            proxy_pass http://127.0.0.1:8000;  # Проксируем на Gunicorn
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+    }
+    
