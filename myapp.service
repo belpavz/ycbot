@@ -6,7 +6,7 @@ After=network.target
 User=belpav
 WorkingDirectory=/home/belpav/ycbot
 Environment="PATH=/home/belpav/ycbot/venv/bin"
-ExecStart=/home/belpav/ycbot/venv/bin/gunicorn --workers 3 --bind 0.0.0.0:8000 app:app
+ExecStart=/home/belpav/ycbot/start_app.sh
 Restart=on-failure
 
 [Install]

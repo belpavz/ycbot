@@ -202,4 +202,5 @@ def logout():
 # ... остальной код ...
 if __name__ == '__main__':
     # app.run(debug=True)  # Включите debug mode для разработки
-    app.run(debug=True, host="0.0.0.0", port=8000)
+    # app.run(debug=True, host="0.0.0.0", port=8000)
+    pass
