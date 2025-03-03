@@ -95,6 +95,11 @@ def signup():
         return render_template('signup.html', salon_id=salon_id, user_data=None, salon_ids=salon_ids)
 
 
+@app.route('/')
+def home():
+    return "Ваше приложение работает!"  # или вернуть HTML-шаблон
+
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
