@@ -10,6 +10,41 @@
 	<p>Привет, {{ user.name }}!</p>
 	<p>Email: {{ user.email }}</p>
 	<a href="/logout">Выйти</a>
+
+	#кнопка записи через телеграм, доработать логику
+	<button id="telegram-bot-link" class="btn btn-primary">Записаться через Telegram</button>
+
+<script>
+document.getElementById('telegram-bot-link').addEventListener('click', function() {
+    // Получаем company_id и form_id из текущей страницы или из данных пользователя
+    const companyId = "{{ salon_id }}";  // Или другой способ получения
+    const formId = "your_form_id";  // Замени на реальный способ получения form_id
+    
+    // Отправляем запрос для получения ссылки
+    fetch('/get_bot_link', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: `company_id=${companyId}&form_id=${formId}`
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Перенаправляем на ссылку бота
+            window.location.href = data.bot_link;
+        } else {
+            alert('Ошибка при создании ссылки на бота');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Произошла ошибка');
+    });
+});
+</script>
+
+
 </body>
 
 </html>

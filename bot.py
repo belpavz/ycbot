@@ -34,8 +34,18 @@ if not all([YCLIENTS_API_TOKEN, COMPANY_ID, FORM_ID, TELEGRAM_BOT_TOKEN]):
     raise ValueError("Отсутствуют необходимые переменные окружения")
 
 # Инициализация API YCLIENTS
-api = YClientsAPI(token=YCLIENTS_API_TOKEN,
-                  company_id=COMPANY_ID, form_id=FORM_ID)
+# api = YClientsAPI(token=YCLIENTS_API_TOKEN, company_id=COMPANY_ID, form_id=FORM_ID)
+# Создаем функцию для получения API для конкретного пользователя
+
+
+def get_user_api(context):
+    # Используем значение по умолчанию, если нет в user_data
+    company_id = context.user_data.get("company_id", COMPANY_ID)
+    # Используем значение по умолчанию, если нет в user_data
+    form_id = context.user_data.get("form_id", FORM_ID)
+
+    return YClientsAPI(token=YCLIENTS_API_TOKEN, company_id=company_id, form_id=form_id)
+
 
 # Путь к файлу базы данных телефонов
 PHONE_DATABASE = "phone_database.json"
@@ -63,7 +73,8 @@ def save_phone_database(phone_data):
 # Получение списка сотрудников
 
 
-def get_staff():
+def get_staff(context):
+    api = get_user_api(context)
     try:
         staff = api.get_staff()
         if staff and staff['success']:
@@ -79,8 +90,12 @@ def get_staff():
 # Получение списка услуг
 
 
-def get_services(staff_id=None):
+def get_services(context, staff_id=None):
     try:
+        company_id = context.user_data.get("company_id", COMPANY_ID)
+        form_id = context.user_data.get("form_id", FORM_ID)
+        api = YClientsAPI(token=YCLIENTS_API_TOKEN,
+                          company_id=company_id, form_id=form_id)
         services = api.get_services(staff_id=staff_id)
         if services and services['success']:
             return services['data']['services']
@@ -95,10 +110,14 @@ def get_services(staff_id=None):
 # Получение доступных дат для записи
 
 
-def get_available_days(service_id, staff_id=None):
+def get_available_days(context, service_id, staff_id=None):
     try:
+        company_id = context.user_data.get("company_id", COMPANY_ID)
+        form_id = context.user_data.get("form_id", FORM_ID)
+        api = YClientsAPI(token=YCLIENTS_API_TOKEN,
+                          company_id=company_id, form_id=form_id)
         available_days = api.get_available_days(
-            staff_id=staff_id, service_id=service_id)
+            get_available_days, staff_id=staff_id, service_id=service_id)
         if available_days and available_days['success']:
             return available_days['data']['booking_dates']
         else:
@@ -112,8 +131,12 @@ def get_available_days(service_id, staff_id=None):
 # Получение доступного времени для записи
 
 
-def get_available_times(service_id, staff_id, selected_date):
+def get_available_times(context, service_id, staff_id, selected_date):
     try:
+        company_id = context.user_data.get("company_id", COMPANY_ID)
+        form_id = context.user_data.get("form_id", FORM_ID)
+        api = YClientsAPI(token=YCLIENTS_API_TOKEN,
+                          company_id=company_id, form_id=form_id)
         available_times = api.get_available_times(
             staff_id=staff_id, service_id=service_id, day=selected_date)
         if available_times and available_times['success']:
@@ -166,9 +189,31 @@ def get_weekday_russian(date_obj):
 
 # Команда /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(
-        "Привет! Я бот для онлайн-записи. Используйте /book, чтобы записаться на услугу."
-    )
+    start_param = context.args[0] if context.args else None
+
+    if start_param:
+        # Декодируем параметры из start параметра
+        try:
+            # Например, если формат параметра "company_id-form_id"
+            company_id, form_id = start_param.split('-')
+
+            # Сохраняем параметры в данных пользователя
+            context.user_data["company_id"] = company_id
+            context.user_data["form_id"] = form_id
+
+            await update.message.reply_text(
+                f"Привет! Я бот для онлайн-записи в компанию {company_id}. "
+                f"Используйте /book, чтобы записаться на услугу."
+            )
+        except Exception as e:
+            logger.error(f"Ошибка при обработке start параметра: {e}")
+            await update.message.reply_text(
+                "Привет! Я бот для онлайн-записи. Используйте /book, чтобы записаться на услугу."
+            )
+    else:
+        await update.message.reply_text(
+            "Привет! Я бот для онлайн-записи. Используйте /book, чтобы записаться на услугу."
+        )
 
 # Команда /book
 
@@ -182,7 +227,7 @@ async def book(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     except Exception as e:
         logger.warning(f"Не удалось удалить сообщение '/book': {e}")
 
-    staff_data = get_staff()
+    staff_data = get_staff(context)
     if not staff_data:
         await update.message.reply_text("Не удалось получить список сотрудников. Попробуйте позже.")
         return
@@ -209,7 +254,7 @@ async def choose_staff(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         1] != 'any' else None
     context.user_data["staff_id"] = staff_id
 
-    services_data = get_services(staff_id)
+    services_data = get_services(context, staff_id)
     if not services_data:
         await query.edit_message_text("Не удалось получить список услуг. Попробуйте позже.")
         return
@@ -235,14 +280,14 @@ async def choose_service(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     service_id = int(query.data.split("_")[1])
     context.user_data["service_id"] = service_id
 
-    services_data = get_services()
+    services_data = get_services(context)
     context.user_data["service_name"] = next(
         (s["title"] for s in services_data if s["id"] == service_id), "Неизвестная услуга")
     if context.user_data["service_name"] == "Неизвестная услуга":
         logger.warning(f"Не удалось найти услугу с ID {service_id}")
 
     staff_id = context.user_data.get("staff_id")
-    available_dates = get_available_days(service_id, staff_id)
+    available_dates = get_available_days(context, service_id, staff_id)
     if not available_dates:
         await query.edit_message_text("Не удалось получить доступные даты. Попробуйте позже.")
         return
@@ -315,7 +360,8 @@ async def choose_date(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     staff_id = context.user_data.get("staff_id")
     service_id = context.user_data["service_id"]
-    available_times = get_available_times(service_id, staff_id, selected_date)
+    available_times = get_available_times(
+        context, service_id, staff_id, selected_date)
     if not available_times:
         await query.edit_message_text("Не удалось получить доступное время. Попробуйте позже.")
         return
@@ -561,7 +607,7 @@ async def change_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     staff_id = context.user_data.get("staff_id")
-    services_data = get_services(staff_id)
+    services_data = get_services(context, staff_id)
     if not services_data:
         await query.edit_message_text("Не удалось получить список услуг. Попробуйте позже.")
         return
@@ -584,7 +630,7 @@ async def change_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     service_id = context.user_data["service_id"]
     staff_id = context.user_data.get("staff_id")
-    available_dates = get_available_days(service_id, staff_id)
+    available_dates = get_available_days(context, service_id, staff_id)
     if not available_dates:
         await query.edit_message_text("Не удалось получить доступные даты. Попробуйте позже.")
         return
@@ -619,7 +665,8 @@ async def change_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     selected_date = context.user_data["selected_date"]
     staff_id = context.user_data.get("staff_id")
     service_id = context.user_data["service_id"]
-    available_times = get_available_times(service_id, staff_id, selected_date)
+    available_times = get_available_times(
+        context, service_id, staff_id, selected_date)
     if not available_times:
         await query.edit_message_text("Не удалось получить доступное время. Попробуйте позже.")
         return
@@ -682,7 +729,7 @@ async def back_to_services(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     staff_id = context.user_data.get("staff_id")
-    services_data = get_services(staff_id)
+    services_data = get_services(context, staff_id)
     if not services_data:
         await query.edit_message_text("Не удалось получить список услуг. Попробуйте позже.")
         return
@@ -713,7 +760,7 @@ async def back_to_months(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     service_id = context.user_data["service_id"]
     staff_id = context.user_data.get("staff_id")
-    available_dates = get_available_days(service_id, staff_id)
+    available_dates = get_available_days(context, service_id, staff_id)
     if not available_dates:
         await query.edit_message_text("Не удалось получить доступные даты. Попробуйте позже.")
         return
@@ -784,6 +831,10 @@ async def create_booking(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     }
 
     try:
+        company_id = context.user_data.get("company_id", COMPANY_ID)
+        form_id = context.user_data.get("form_id", FORM_ID)
+        api = YClientsAPI(token=YCLIENTS_API_TOKEN,
+                          company_id=company_id, form_id=form_id)
         booked = api.book(**booking_data)
         logger.debug(f"API Response: {booked}")
         logger.info(f"BOOKED: {booked}")

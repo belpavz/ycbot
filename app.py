@@ -6,13 +6,15 @@ import yclients
 from flask_sqlalchemy import SQLAlchemy
 import os
 import bcrypt  # Импортируем bcrypt
+from flask_wtf.csrf import CSRFProtect
 
 app = Flask(__name__)
 app.config.from_object('config.Config')
 app.secret_key = app.config['SECRET_KEY']
 db = SQLAlchemy(app)  # Инициализация SQLAlchemy
+csrf = CSRFProtect(app)
 
-# Определение модели данных для связи с Yclients
+# Определение модели данных для связи с Yclients 1
 
 
 class UsersYclients(db.Model):
