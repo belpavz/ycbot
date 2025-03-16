@@ -76,7 +76,7 @@ def save_phone_database(phone_data):
 def get_staff(context):
     api = get_user_api(context)
     try:
-        staff = api.get_staff()
+        staff = api.get_staff(context)
         if staff and staff['success']:
             return staff['data']
         else:
@@ -92,10 +92,7 @@ def get_staff(context):
 
 def get_services(context, staff_id=None):
     try:
-        company_id = context.user_data.get("company_id", COMPANY_ID)
-        form_id = context.user_data.get("form_id", FORM_ID)
-        api = YClientsAPI(token=YCLIENTS_API_TOKEN,
-                          company_id=company_id, form_id=form_id)
+        api = get_user_api(context)
         services = api.get_services(staff_id=staff_id)
         if services and services['success']:
             return services['data']['services']
@@ -112,20 +109,18 @@ def get_services(context, staff_id=None):
 
 def get_available_days(context, service_id, staff_id=None):
     try:
-        company_id = context.user_data.get("company_id", COMPANY_ID)
-        form_id = context.user_data.get("form_id", FORM_ID)
-        api = YClientsAPI(token=YCLIENTS_API_TOKEN,
-                          company_id=company_id, form_id=form_id)
+        api = get_user_api(context)
         available_days = api.get_available_days(
-            get_available_days, staff_id=staff_id, service_id=service_id)
+            staff_id=staff_id, service_id=service_id)
         if available_days and available_days['success']:
             return available_days['data']['booking_dates']
         else:
-            logger.error(
-                f"Ошибка при получении доступных дат: {available_days.get('meta', 'No meta data available') if available_days else 'No response'}")
+            logger.info(
+                f"Получение доступных дней для service_id={service_id}, staff_id={staff_id}")
             return None
     except Exception as e:
-        logger.error(f"Исключение при получении списка доступных дат: {e}")
+        logger.error(
+            f"Исключение при получении списка доступных дат: {e}", exc_info=True)
         return None
 
 # Получение доступного времени для записи
@@ -133,10 +128,7 @@ def get_available_days(context, service_id, staff_id=None):
 
 def get_available_times(context, service_id, staff_id, selected_date):
     try:
-        company_id = context.user_data.get("company_id", COMPANY_ID)
-        form_id = context.user_data.get("form_id", FORM_ID)
-        api = YClientsAPI(token=YCLIENTS_API_TOKEN,
-                          company_id=company_id, form_id=form_id)
+        api = get_user_api(context)
         available_times = api.get_available_times(
             staff_id=staff_id, service_id=service_id, day=selected_date)
         if available_times and available_times['success']:
@@ -491,7 +483,7 @@ async def confirm_booking(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     service_name = context.user_data["service_name"]
 
     if staff_id:
-        staff_data = get_staff()
+        staff_data = get_staff(context)
         if staff_data:
             staff_member = next(
                 (s for s in staff_data if str(s["id"]) == staff_id), None)
@@ -585,7 +577,7 @@ async def change_staff(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    staff_data = get_staff()
+    staff_data = get_staff(context)
     if not staff_data:
         await query.edit_message_text("Не удалось получить список сотрудников. Попробуйте позже.")
         return
@@ -707,7 +699,7 @@ async def back_to_staff(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    staff_data = get_staff()
+    staff_data = get_staff(context)
     if not staff_data:
         await query.edit_message_text("Не удалось получить список сотрудников. Попробуйте позже.")
         return
@@ -842,7 +834,7 @@ async def create_booking(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if isinstance(booked, tuple) and booked[0] is True:
             staff_id_for_name = context.user_data.get("staff_id")
             if staff_id_for_name:
-                staff_data = get_staff()
+                staff_data = get_staff(context)
                 if staff_data:
                     staff_member = next((s for s in staff_data if str(
                         s["id"]) == staff_id_for_name), None)
