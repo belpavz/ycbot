@@ -156,7 +156,11 @@ def profile():
     user_id = session.get('user_id')
     if user_id:
         user = YourUserModel.query.get(user_id)
-        return render_template('profile.html', user=user)
+        # Получаем salon_id и form_id из базы данных
+        user_yclients = UsersYclients.query.filter_by(user_id=user_id).first()
+        salon_id = user_yclients.salon_id if user_yclients else None
+        form_id = "1"  # Получите реальный form_id из конфигурации или базы данных
+        return render_template('profile.html', user=user, salon_id=salon_id, form_id=form_id)
     else:
         return redirect(url_for('login'))
 
@@ -233,6 +237,24 @@ def activate():
         salon_id = request.args.get('salon_id')
         user_id = request.args.get('user_id')
         return render_template('activate.html', salon_id=salon_id, user_id=user_id)
+
+
+@app.route('/get_bot_link', methods=['POST'])
+def get_bot_link():
+    company_id = request.form.get('company_id')
+    form_id = request.form.get('form_id')
+
+    if not company_id or not form_id:
+        return jsonify({"success": False, "error": "Missing required parameters"}), 400
+
+    # Формируем параметр для deep linking
+    start_param = f"{company_id}-{form_id}"
+
+    # Формируем ссылку на бота
+    bot_username = "yclient_bbot"  # имя бота
+    bot_link = f"https://t.me/{bot_username}?start={start_param}"
+
+    return jsonify({"success": True, "bot_link": bot_link})
 
 
 @app.route('/logout')

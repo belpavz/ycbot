@@ -39,12 +39,17 @@ if not all([YCLIENTS_API_TOKEN, COMPANY_ID, FORM_ID, TELEGRAM_BOT_TOKEN]):
 
 
 def get_user_api(context):
-    # Используем значение по умолчанию, если нет в user_data
-    company_id = context.user_data.get("company_id", COMPANY_ID)
-    # Используем значение по умолчанию, если нет в user_data
-    form_id = context.user_data.get("form_id", FORM_ID)
+    try:
+        company_id = context.user_data.get("company_id", COMPANY_ID)
+        form_id = context.user_data.get("form_id", FORM_ID)
 
-    return YClientsAPI(token=YCLIENTS_API_TOKEN, company_id=company_id, form_id=form_id)
+        logger.info(
+            f"Инициализация API с company_id={company_id}, form_id={form_id}")
+        return YClientsAPI(token=YCLIENTS_API_TOKEN, company_id=company_id, form_id=form_id)
+    except Exception as e:
+        logger.error(f"Ошибка при инициализации API: {e}")
+        # Возвращаем API с дефолтными параметрами
+        return YClientsAPI(token=YCLIENTS_API_TOKEN, company_id=COMPANY_ID, form_id=FORM_ID)
 
 
 # Путь к файлу базы данных телефонов
@@ -76,7 +81,7 @@ def save_phone_database(phone_data):
 def get_staff(context):
     api = get_user_api(context)
     try:
-        staff = api.get_staff(context)
+        staff = api.get_staff()
         if staff and staff['success']:
             return staff['data']
         else:
@@ -184,10 +189,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     start_param = context.args[0] if context.args else None
 
     if start_param:
-        # Декодируем параметры из start параметра
         try:
-            # Например, если формат параметра "company_id-form_id"
+            # Проверяем формат параметра
+            if '-' not in start_param:
+                raise ValueError("Неверный формат параметра")
+
             company_id, form_id = start_param.split('-')
+
+            # Проверяем, что параметры не пустые
+            if not company_id or not form_id:
+                raise ValueError("Пустые параметры")
 
             # Сохраняем параметры в данных пользователя
             context.user_data["company_id"] = company_id
@@ -825,9 +836,16 @@ async def create_booking(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     try:
         company_id = context.user_data.get("company_id", COMPANY_ID)
         form_id = context.user_data.get("form_id", FORM_ID)
+
+        logger.info(
+            f"Создание записи с параметрами: company_id={company_id}, form_id={form_id}")
+        logger.info(f"Данные для записи: {booking_data}")
+
         api = YClientsAPI(token=YCLIENTS_API_TOKEN,
                           company_id=company_id, form_id=form_id)
         booked = api.book(**booking_data)
+
+        logger.info(f"Ответ API при создании записи: {booked}")
         logger.debug(f"API Response: {booked}")
         logger.info(f"BOOKED: {booked}")
 

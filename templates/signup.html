@@ -7,7 +7,8 @@
 
 <body>
 	<h1>Регистрация</h1>
-	<form method="POST" action="/activate">
+	<form method="POST" action="/signup">
+		{{ csrf_token() }}
 		<input type="hidden" name="salon_id" value="{{ salon_id }}">
 		{% if salon_ids %}
 		{% for salon_id_item in salon_ids %}

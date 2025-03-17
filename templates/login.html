@@ -11,6 +11,7 @@
 	<p style="color: red;">{{ error }}</p>
 	{% endif %}
 	<form method="POST" action="/login">
+		{{ csrf_token() }}
 		<label for="email">Email:</label><br>
 		<input type="email" id="email" name="email"><br><br>
 
