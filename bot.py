@@ -1,5 +1,6 @@
 import logging
 from dotenv import load_dotenv
+from app import db, UserPhone
 import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, constants
 from telegram.ext import (
@@ -13,6 +14,7 @@ from telegram.ext import (
 from yclients import YClientsAPI
 from datetime import datetime, date
 import json
+
 
 # Настройка логирования
 logging.basicConfig(
@@ -52,32 +54,25 @@ def get_user_api(context):
         return YClientsAPI(token=YCLIENTS_API_TOKEN, company_id=COMPANY_ID, form_id=FORM_ID)
 
 
-# Путь к файлу базы данных телефонов
-PHONE_DATABASE = "phone_database.json"
-
-# Загрузка базы данных телефонов из файла
-
-
-def load_phone_database():
-    try:
-        with open(PHONE_DATABASE, "r") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return {}
-    except json.JSONDecodeError:
-        logger.warning("Файл базы данных телефонов поврежден. Создаю новый.")
-        return {}
-
-# Сохранение базы данных телефонов в файл
+# Загрузка и сохранение базы данных телефонов
+def get_user_phone(telegram_id):
+    user_phone = UserPhone.query.filter_by(
+        telegram_id=str(telegram_id)).first()
+    return user_phone.phone if user_phone else None
 
 
-def save_phone_database(phone_data):
-    with open(PHONE_DATABASE, "w") as f:
-        json.dump(phone_data, f, indent=4)
+def save_user_phone(telegram_id, phone):
+    user_phone = UserPhone.query.filter_by(
+        telegram_id=str(telegram_id)).first()
+    if user_phone:
+        user_phone.phone = phone
+    else:
+        user_phone = UserPhone(telegram_id=str(telegram_id), phone=phone)
+        db.session.add(user_phone)
+    db.session.commit()
+
 
 # Получение списка сотрудников
-
-
 def get_staff(context):
     api = get_user_api(context)
     try:
@@ -92,9 +87,8 @@ def get_staff(context):
         logger.error(f"Исключение при получении списка сотрудников: {e}")
         return None
 
+
 # Получение списка услуг
-
-
 def get_services(context, staff_id=None):
     try:
         api = get_user_api(context)
@@ -109,9 +103,8 @@ def get_services(context, staff_id=None):
         logger.error(f"Исключение при получении списка услуг: {e}")
         return None
 
+
 # Получение доступных дат для записи
-
-
 def get_available_days(context, service_id, staff_id=None):
     try:
         api = get_user_api(context)
@@ -406,7 +399,7 @@ async def choose_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         logger.warning(f"Не удалось удалить сообщение 'Выберите время:': {e}")
 
     user_id = str(update.effective_user.id)
-    phone_data = load_phone_database()
+    phone_data = get_user_phone()
 
     if user_id in phone_data and phone_data[user_id]:
         context.user_data["phone"] = phone_data[user_id]
@@ -441,9 +434,7 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     context.user_data["phone"] = phone
 
     user_id = str(update.effective_user.id)
-    phone_data = load_phone_database()
-    phone_data[user_id] = phone
-    save_phone_database(phone_data)
+    save_user_phone(user_id, phone)
 
     try:
         await context.bot.delete_message(

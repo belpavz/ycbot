@@ -5,18 +5,19 @@ import utils
 import yclients
 from flask_sqlalchemy import SQLAlchemy
 import os
-import bcrypt  # Импортируем bcrypt
+import bcrypt
 from flask_wtf.csrf import CSRFProtect
+from flask_migrate import Migrate
 
 app = Flask(__name__)
 app.config.from_object('config.Config')
 app.secret_key = app.config['SECRET_KEY']
-db = SQLAlchemy(app)  # Инициализация SQLAlchemy
+db = SQLAlchemy(app)
 csrf = CSRFProtect(app)
+migrate = Migrate(app, db)
 
-# Определение модели данных для связи с Yclients 1
 
-
+# Определение модели данных для связи с Yclients
 class UsersYclients(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer)
@@ -26,27 +27,34 @@ class UsersYclients(db.Model):
     def __repr__(self):
         return f'<UsersYclients {self.user_id} {self.salon_id} {self.user_yclients_id}>'
 
+
 # Определение модели пользователя
-
-
-class YourUserModel(db.Model):
+class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100))
     email = db.Column(db.String(100), unique=True)
     phone = db.Column(db.String(20))
-    password_hash = db.Column(db.String(128))  # Переименовали поле
+    password_hash = db.Column(db.String(128))
 
     def __repr__(self):
         return f'<User {self.name} {self.email}>'
 
     def set_password(self, password):
-        """Хеширует пароль и сохраняет хеш."""
         self.password_hash = bcrypt.hashpw(password.encode(
             'utf-8'), bcrypt.gensalt()).decode('utf-8')
 
     def check_password(self, password):
-        """Проверяет, соответствует ли пароль хешу."""
         return bcrypt.checkpw(password.encode('utf-8'), self.password_hash.encode('utf-8'))
+
+
+# Модель для хранения телефонов пользователей Telegram
+class UserPhone(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    telegram_id = db.Column(db.String(20), unique=True)
+    phone = db.Column(db.String(20))
+
+    def __repr__(self):
+        return f'<UserPhone {self.telegram_id} {self.phone}>'
 
 
 # Создание базы данных (если ее нет)
@@ -62,25 +70,29 @@ def signup():
     salon_ids = request.args.getlist('salon_ids[]')
 
     if request.method == 'POST':
-        password = request.form.get('password')
-        email = request.form.get('email')
-        name = request.form.get('name')
-        phone = request.form.get('phone')
+        try:
+            password = request.form.get('password')
+            email = request.form.get('email')
+            name = request.form.get('name')
+            phone = request.form.get('phone')
 
         # Ищем пользователя в базе данных по email
-        user = YourUserModel.query.filter_by(email=email).first()
-        if user:
-            user_id = user.id
-        else:
-            # Создаем нового пользователя
-            new_user = YourUserModel(name=name, email=email, phone=phone)
-            new_user.set_password(password)  # Хешируем пароль
-            db.session.add(new_user)
-            db.session.commit()
-            user_id = new_user.id
+            user = User.query.filter_by(email=email).first()
+            if user:
+                user_id = user.id
+            else:
+                # Создаем нового пользователя
+                new_user = User(name=name, email=email, phone=phone)
+                new_user.set_password(password)  # Хешируем пароль
+                db.session.add(new_user)
+                db.session.commit()
+                user_id = new_user.id
 
         # После успешной регистрации перенаправляем на страницу активации
-        return redirect(url_for('activate', salon_id=salon_id, user_id=user_id))
+            return redirect(url_for('activate', salon_id=salon_id, user_id=user_id))
+        except Exception as e:
+            app.logger.error(f"Ошибка при регистрации: {e}")
+            return "Произошла ошибка при обработке формы. Пожалуйста, попробуйте снова.", 500
 
     if user_data_encoded and user_data_sign:
         # Передача данных пользователя включена
@@ -138,7 +150,7 @@ def login():
         email = request.form.get('email')
         password = request.form.get('password')
 
-        user = YourUserModel.query.filter_by(email=email).first()
+        user = User.query.filter_by(email=email).first()
         if user and user.check_password(password):
             # Аутентификация успешна
             session['user_id'] = user.id  # Сохраняем ID пользователя в сессии
@@ -155,7 +167,7 @@ def login():
 def profile():
     user_id = session.get('user_id')
     if user_id:
-        user = YourUserModel.query.get(user_id)
+        user = User.query.get(user_id)
         # Получаем salon_id и form_id из базы данных
         user_yclients = UsersYclients.query.filter_by(user_id=user_id).first()
         salon_id = user_yclients.salon_id if user_yclients else None
@@ -264,6 +276,7 @@ def logout():
 
 
 if __name__ == '__main__':
-    # app.run(debug=True)  # Включите debug mode для разработки
+    app.run(debug=True)  # Включите debug mode для разработки
     # app.run(debug=True, host="0.0.0.0", port=8000)
+    app.run(host="0.0.0.0", port=8000)
     pass
