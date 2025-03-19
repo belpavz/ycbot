@@ -2,10 +2,12 @@
 <html>
 <head>
     <title>Активация интеграции</title>
+    <meta charset="UTF-8">
 </head>
 <body>
     <h1>Активация интеграции</h1>
     <form method="POST" action="/activate">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="salon_id" value="{{ salon_id }}">
         <input type="hidden" name="user_id" value="{{ user_id }}">
         <p>Нажмите кнопку для активации интеграции с YClients.</p>
