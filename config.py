@@ -15,5 +15,5 @@ class Config:
     WEBHOOK_URL = os.environ.get('WEBHOOK_URL')
     DATABASE_PASSWORD = os.environ.get('DATABASE_PASSWORD')
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
-        'postgresql://ycbotuser:{DATABASE_PASSWORD}@localhost/ycbase'
+        f'postgresql://ycbotuser:{DATABASE_PASSWORD}@localhost/ycbase'
     SQLALCHEMY_TRACK_MODIFICATIONS = False

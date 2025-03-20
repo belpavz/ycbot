@@ -399,10 +399,10 @@ async def choose_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         logger.warning(f"Не удалось удалить сообщение 'Выберите время:': {e}")
 
     user_id = str(update.effective_user.id)
-    phone_data = get_user_phone()
+    phone = get_user_phone(user_id)
 
-    if user_id in phone_data and phone_data[user_id]:
-        context.user_data["phone"] = phone_data[user_id]
+    if phone:
+        context.user_data["phone"] = phone
         await confirm_booking(update, context)
     else:
         keyboard = [
