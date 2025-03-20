@@ -7,7 +7,11 @@ User=belpav
 WorkingDirectory=/home/belpav/ycbot
 Environment="PATH=/home/belpav/ycbot/venv/bin"
 ExecStart=/home/belpav/ycbot/venv/bin/gunicorn --workers 3 --bind 0.0.0.0:8000 app:app
-Restart=on-failure
+Restart=always
+RestartSec=5
+# Ограничение ресурсов
+MemoryLimit=1G
+CPUQuota=80%
 
 [Install]
 WantedBy=multi-user.target
