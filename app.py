@@ -62,11 +62,38 @@ with app.app_context():
     db.create_all()
 
 
+@app.route('/debug-params')
+def debug_params():
+    params = {key: value for key, value in request.args.items()}
+    return jsonify(params)
+
+
 @app.route('/signup', methods=['GET', 'POST'])
 def signup():
+    app.logger.info(f"Получен запрос на /signup с параметрами: {request.args}")
     salon_id = request.args.get('salon_id')
+    user_data = request.args.get('user_data')
     user_data_encoded = request.args.get('user_data')
     user_data_sign = request.args.get('user_data_sign')
+
+    # Обработка ситуации, когда salon_id отсутствует
+    if not salon_id:
+        return "Ошибка: отсутствует идентификатор салона", 400
+
+    # Проверка подписи, если передаются данные пользователя
+    if user_data and user_data_sign:
+        # Проверка подписи согласно документации YClients
+        if not utils.verify_yclients_signature(user_data, user_data_sign):
+            return "Ошибка: недействительная подпись данных", 400
+
+        # Декодирование данных пользователя
+        try:
+            decoded_user_data = utils.decode_yclients_user_data(user_data)
+            # Использование данных пользователя (email, имя и т.д.)
+        except Exception as e:
+            app.logger.error(
+                f"Ошибка при декодировании данных пользователя: {e}")
+
     salon_ids = request.args.getlist('salon_ids[]')
 
     if request.method == 'POST':
