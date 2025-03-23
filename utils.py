@@ -7,7 +7,7 @@ from config import Config
 
 
 def decode_user_data(user_data_encoded, partner_token):
-    """Декодирует user_data из base64 и проверяет подпись."""
+    """Декодирует user_data из base64."""
     try:
         user_data_bytes = base64.b64decode(user_data_encoded)
         user_data_str = user_data_bytes.decode('utf-8')

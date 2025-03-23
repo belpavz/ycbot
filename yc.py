@@ -26,7 +26,7 @@ def activate_integration(salon_id, api_key):
         return False, None, str(e)
 
 
-def send_integration_settings(salon_id, application_id, api_key, webhook_urls, channels=None):
+def send_integration_settings(salon_id, application_id, api_key, webhook_urls, callback_url=None, channels=None):
     """Отправляет настройки интеграции в YCLIENTS."""
     url = "https://api.yclients.com/marketplace/partner/callback"
     headers = {
@@ -38,11 +38,15 @@ def send_integration_settings(salon_id, application_id, api_key, webhook_urls, c
         "api_key": api_key,
         "webhook_urls": webhook_urls
     }
+
+    if callback_url:
+        data["callback_url"] = callback_url
+
     if channels:
         data["channels"] = channels
 
     try:
-        response = requests.post(url, headers=headers, data=json.dumps(data))
+        response = requests.post(url, headers=headers, json=data)
         response.raise_for_status()
         return True, response.json()
     except requests.exceptions.RequestException as e:

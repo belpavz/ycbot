@@ -3,18 +3,52 @@ from flask import Flask, request, render_template, redirect, url_for, session, j
 import config
 import utils
 import yclients
+import json
 from flask_sqlalchemy import SQLAlchemy
-import os
 import bcrypt
 from flask_wtf.csrf import CSRFProtect
 from flask_migrate import Migrate
+import logging
+from logging.handlers import RotatingFileHandler
+import os
+from datetime import datetime
+
 
 app = Flask(__name__)
 app.config.from_object('config.Config')
 app.secret_key = app.config['SECRET_KEY']
 db = SQLAlchemy(app)
-csrf = CSRFProtect(app)
 migrate = Migrate(app, db)
+csrf = CSRFProtect()
+csrf.init_app(app)
+
+
+# Настройка логирования в файл для анализа
+if not app.debug:
+    file_handler = RotatingFileHandler('/home/belpav/ycbot/logs/webhook.log',
+                                       maxBytes=10240, backupCount=10)
+    file_handler.setFormatter(logging.Formatter(
+        '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'
+    ))
+    file_handler.setLevel(logging.INFO)
+    app.logger.addHandler(file_handler)
+    app.logger.setLevel(logging.INFO)
+    app.logger.info('Webhook service startup')
+
+
+# Логирования для отслеживания вебхуков
+if not app.debug:
+    if not os.path.exists('logs'):
+        os.mkdir('logs')
+    file_handler = RotatingFileHandler('logs/ycbot.log',
+                                       maxBytes=10240, backupCount=10)
+    file_handler.setFormatter(logging.Formatter(
+        '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'
+    ))
+    file_handler.setLevel(logging.INFO)
+    app.logger.addHandler(file_handler)
+    app.logger.setLevel(logging.INFO)
+    app.logger.info('YCBot startup')
 
 
 # Определение модели данных для связи с Yclients
@@ -57,6 +91,68 @@ class UserPhone(db.Model):
         return f'<UserPhone {self.telegram_id} {self.phone}>'
 
 
+# Модель для хранения событий вебхуков
+class WebhookEvent(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    # record, client, integration_disabled
+    event_type = db.Column(db.String(50))
+    resource = db.Column(db.String(50))
+    salon_id = db.Column(db.Integer)
+    data = db.Column(db.Text)  # JSON данные
+    processed = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<WebhookEvent {self.event_type} {self.salon_id}>'
+
+
+# Функция для сохранения событий вебхуков
+def save_webhook_event(event_type, resource, salon_id, data):
+    """Сохраняет событие вебхука в базу данных."""
+    try:
+        webhook_event = WebhookEvent(
+            event_type=event_type,
+            resource=resource,
+            salon_id=salon_id,
+            data=json.dumps(data)
+        )
+        db.session.add(webhook_event)
+        db.session.commit()
+        app.logger.info(
+            f"Webhook event saved: ID={webhook_event.id}, Type={event_type}, Resource={resource}")
+        return webhook_event.id
+    except Exception as e:
+        app.logger.error(f"Error saving webhook event: {str(e)}")
+        db.session.rollback()
+        return None
+
+
+# функции для обработки различных типов вебхуков
+def process_record_webhook(record_data):
+    """Обрабатывает вебхук о записи."""
+    record_id = record_data.get('id')
+    salon_id = record_data.get('company_id')
+    client_id = record_data.get('client', {}).get('id') if isinstance(
+        record_data.get('client'), dict) else record_data.get('client')
+    staff_id = record_data.get('staff_id')
+    date_time = record_data.get('datetime')
+    status = record_data.get('attendance')
+
+    # Здесь можно добавить логику обработки записи
+    # Например, отправка уведомления в Telegram
+    app.logger.info(f"Record {record_id} processed. Status: {status}")
+
+
+def process_client_webhook(client_data):
+    """Обрабатывает вебхук о клиенте."""
+    client_id = client_data.get('id')
+    client_name = client_data.get('name')
+    client_phone = client_data.get('phone')
+
+    # Здесь можно добавить логику обработки клиента
+    app.logger.info(f"Client {client_id} processed: {client_name}")
+
+
 # Создание базы данных (если ее нет)
 with app.app_context():
     db.create_all()
@@ -69,32 +165,75 @@ def debug_params():
 
 
 @app.route('/signup', methods=['GET', 'POST'])
+@csrf.exempt
 def signup():
     app.logger.info(f"Получен запрос на /signup с параметрами: {request.args}")
+    app.logger.info(f"Заголовки запроса: {request.headers}")
+
     salon_id = request.args.get('salon_id')
     user_data = request.args.get('user_data')
-    user_data_encoded = request.args.get('user_data')
     user_data_sign = request.args.get('user_data_sign')
+    salon_ids = request.args.getlist('salon_ids[]')
 
     # Обработка ситуации, когда salon_id отсутствует
-    if not salon_id:
+    if not salon_id and not salon_ids:
+        app.logger.error("Отсутствует идентификатор салона")
         return "Ошибка: отсутствует идентификатор салона", 400
 
-    # Проверка подписи, если передаются данные пользователя
-    if user_data and user_data_sign:
-        # Проверка подписи согласно документации YClients
-        if not utils.verify_yclients_signature(user_data, user_data_sign):
-            return "Ошибка: недействительная подпись данных", 400
+    decoded_user_data = None
 
-        # Декодирование данных пользователя
+    # Проверка и декодирование данных пользователя
+    if user_data and user_data_sign:
+        app.logger.info(f"Получены данные пользователя: {user_data}")
         try:
-            decoded_user_data = utils.decode_yclients_user_data(user_data)
-            # Использование данных пользователя (email, имя и т.д.)
+            # Декодирование данных пользователя
+            decoded_user_data = utils.decode_user_data(
+                user_data, app.config['PARTNER_TOKEN'])
+            app.logger.info(
+                f"Декодированные данные пользователя: {decoded_user_data}")
+
+            # Проверка подписи (подтвержена)
+            if utils.verify_signature(user_data, user_data_sign, app.config['PARTNER_TOKEN']):
+                # Автоматическая регистрация пользователя
+                if decoded_user_data:
+                    email = decoded_user_data.get('email')
+                    if email:
+                        user = User.query.filter_by(email=email).first()
+                        if not user:
+                            # Создаем нового пользователя
+                            new_user = User(
+                                name=decoded_user_data.get('name', ''),
+                                email=email,
+                                phone=decoded_user_data.get('phone', '')
+                            )
+                            # Генерируем случайный пароль
+                            temp_password = os.urandom(8).hex()
+                            new_user.set_password(temp_password)
+                            db.session.add(new_user)
+                            db.session.commit()
+                            user_id = new_user.id
+                        else:
+                            user_id = user.id
+
+                    # Перенаправляем на активацию
+                        return redirect(url_for('activate', salon_id=salon_id, user_id=user_id))
+            else:
+                app.logger.warning("Недействительная подпись данных")
+                decoded_user_data = None
         except Exception as e:
             app.logger.error(
-                f"Ошибка при декодировании данных пользователя: {e}")
+                f"Ошибка при обработке данных пользователя: {str(e)}")
+            decoded_user_data = None
 
-    salon_ids = request.args.getlist('salon_ids[]')
+            # Проверка подписи (не подтверждена)
+            if not utils.verify_signature(user_data, user_data_sign, app.config['PARTNER_TOKEN']):
+                app.logger.warning("Недействительная подпись данных")
+                # Продолжаем выполнение, но не используем данные пользователя
+                decoded_user_data = None
+        except Exception as e:
+            app.logger.error(
+                f"Ошибка при обработке данных пользователя: {str(e)}")
+            decoded_user_data = None
 
     if request.method == 'POST':
         try:
@@ -103,7 +242,7 @@ def signup():
             name = request.form.get('name')
             phone = request.form.get('phone')
 
-        # Ищем пользователя в базе данных по email
+            # Ищем пользователя в базе данных по email
             user = User.query.filter_by(email=email).first()
             if user:
                 user_id = user.id
@@ -115,25 +254,18 @@ def signup():
                 db.session.commit()
                 user_id = new_user.id
 
-        # После успешной регистрации перенаправляем на страницу активации
+            # После успешной регистрации перенаправляем на страницу активации
             return redirect(url_for('activate', salon_id=salon_id, user_id=user_id))
         except Exception as e:
             app.logger.error(f"Ошибка при регистрации: {e}")
             return "Произошла ошибка при обработке формы. Пожалуйста, попробуйте снова.", 500
 
-    if user_data_encoded and user_data_sign:
-        # Передача данных пользователя включена
-        user_data = utils.decode_user_data(
-            user_data_encoded, app.config['PARTNER_TOKEN'])
-        if user_data and utils.verify_signature(user_data_encoded, user_data_sign, app.config['PARTNER_TOKEN']):
-            # Подпись валидна, можно использовать данные
-            return render_template('signup.html', salon_id=salon_id, user_data=user_data, salon_ids=salon_ids, user_id=None)
-        else:
-            # Ошибка подписи или декодирования
-            return "Invalid signature or data!", 400
-    else:
-        # Данные пользователя не переданы, отображаем обычную форму
-        return render_template('signup.html', salon_id=salon_id, user_data=None, salon_ids=salon_ids, )
+    # Отображаем форму регистрации с данными пользователя (если они есть)
+    return render_template('signup.html',
+                           salon_id=salon_id,
+                           user_data=decoded_user_data,
+                           salon_ids=salon_ids,
+                           user_id=None)
 
 
 @app.route('/')
@@ -142,33 +274,71 @@ def home():
 
 
 @app.route('/webhook', methods=['POST'])
+@csrf.exempt
 def webhook():
-    data = request.json
-    # Обработка различных типов событий
-    resource = data.get('resource')
+    try:
+        data = request.json
+        app.logger.info(f"Webhook received: {data}")
 
-    if resource == 'record':
-        # Обработка события записи
-        pass
-    elif resource == 'client':
-        # Обработка события клиента
-        pass
+        resource = data.get('resource')
+        company_id = data.get('company_id')
+        salon_id = data.get('data', {}).get('company_id')
 
-    return jsonify({"success": True})
+        # Сохраняем событие в базу данных
+        event_id = save_webhook_event(
+            'webhook', resource, salon_id or company_id, data)
+
+        if resource == 'record':
+            app.logger.info(f"Processing record event: {data}")
+            record_data = data.get('data', {})
+            # Обработка события записи
+            process_record_webhook(record_data)
+        elif resource == 'client':
+            app.logger.info(f"Processing client event: {data}")
+            client_data = data.get('data', {})
+            # Обработка события клиента
+            process_client_webhook(client_data)
+        else:
+            app.logger.warning(f"Unknown resource type: {resource}")
+
+        return jsonify({"success": True})
+    except Exception as e:
+        app.logger.error(f"Error processing webhook: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route('/callback', methods=['POST'])
+@csrf.exempt
 def callback():
-    data = request.json
-    salon_id = data.get('salon_id')
-    application_id = data.get('application_id')
-    event = data.get('event')
+    try:
+        data = request.json
+        app.logger.info(f"Callback received: {data}")
 
-    if event == 'integration_disabled':
-        # Обработка отключения интеграции
-        pass
+        salon_id = data.get('salon_id')
+        application_id = data.get('application_id')
+        event = data.get('event')
+        partner_token = data.get('partner_token')
 
-    return jsonify({"success": True})
+        # Сохраняем событие в базу данных
+        event_id = save_webhook_event('callback', event, salon_id, data)
+
+        if event == 'integration_disabled' or event == 'uninstall':
+            app.logger.info(
+                f"Processing {event} event for salon_id: {salon_id}")
+            # Удаление записей из базы данных при отключении интеграции
+            entries = UsersYclients.query.filter_by(salon_id=salon_id).all()
+            for entry in entries:
+                db.session.delete(entry)
+            db.session.commit()
+            app.logger.info(
+                f"Integration data removed for salon_id: {salon_id}")
+        else:
+            app.logger.warning(f"Unknown event type: {event}")
+
+        return jsonify({"success": True})
+    except Exception as e:
+        app.logger.error(f"Error processing callback: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -205,6 +375,7 @@ def profile():
 
 
 @app.route('/activate', methods=['GET', 'POST'])
+@csrf.exempt
 def activate():
     if request.method == 'POST':
         salon_id = request.form.get('salon_id')
@@ -212,70 +383,78 @@ def activate():
         user_id = request.form.get('user_id')
 
         api_key = app.config['API_KEY']
-        # Получаем application_id из конфига
         application_id = app.config['APPLICATION_ID']
-        # Получаем webhook_url из конфига
-        webhook_urls = [app.config['WEBHOOK_URL']]
-        # channels = ["sms", "whatsapp"]  # Укажите каналы, если необходимо
+
+        # Формируем полные URL для вебхуков
+        base_url = request.host_url.rstrip('/')
+        webhook_urls = [f"{base_url}/webhook"]
+        callback_url = f"{base_url}/callback"
+
+        app.logger.info(
+            f"Configuring webhooks: {webhook_urls} and callback: {callback_url}")
+
+        success_count = 0
+        error_count = 0
 
         if salon_ids:
             for salon_id_item in salon_ids:
-                success, user_yclients_id, response = yclients.activate_integration(
-                    salon_id_item, api_key)
+                success, result = activate_salon_integration(
+                    salon_id_item, user_id, api_key, application_id, webhook_urls, callback_url)
                 if success:
-                    print(
-                        f"Интеграция успешно активирована для филиала {salon_id_item}, USER_ID: {user_yclients_id}")
-                    # Сохраняем данные в базе данных
-                    entry = UsersYclients(
-                        user_id=user_id, salon_id=salon_id_item, user_yclients_id=user_yclients_id)
-                    db.session.add(entry)
-                    db.session.commit()
-
-                    # Отправляем настройки интеграции
-                    success, message = yclients.send_integration_settings(
-                        salon_id_item, application_id, api_key, webhook_urls)
-                    if success:
-                        print(
-                            f"Настройки интеграции успешно отправлены для филиала {salon_id_item}")
-                    else:
-                        print(
-                            f"Ошибка отправки настроек интеграции для филиала {salon_id_item}: {message}")
-
+                    success_count += 1
                 else:
-                    print(
-                        f"Ошибка активации для филиала {salon_id_item}: {response}")
-                    # TODO: Обработать ошибку
+                    error_count += 1
         else:
-            success, user_yclients_id, response = yclients.activate_integration(
-                salon_id, api_key)
+            success, result = activate_salon_integration(
+                salon_id, user_id, api_key, application_id, webhook_urls, callback_url)
             if success:
-                print(
-                    f"Интеграция успешно активирована, USER_ID: {user_yclients_id}")
-                # Сохраняем данные в базе данных
-                entry = UsersYclients(
-                    user_id=user_id, salon_id=salon_id, user_yclients_id=user_yclients_id)
-                db.session.add(entry)
-                db.session.commit()
-
-                # Отправляем настройки интеграции
-                success, message = yclients.send_integration_settings(
-                    salon_id, application_id, api_key, webhook_urls)
-                if success:
-                    print(
-                        f"Настройки интеграции успешно отправлены для филиала {salon_id}")
-                else:
-                    print(
-                        f"Ошибка отправки настроек интеграции для филиала {salon_id}: {message}")
-
+                success_count += 1
             else:
-                print(f"Ошибка активации: {response}")
-                # TODO: Обработать ошибку
+                error_count += 1
 
-        return "Интеграция активирована! (проверьте логи)", 200
+        if error_count == 0:
+            return f"Integration activated successfully for {success_count} salons!", 200
+        else:
+            return f"Integration activated with errors. Success: {success_count}, Errors: {error_count}. Check logs for details.", 200
     else:  # GET запрос
         salon_id = request.args.get('salon_id')
         user_id = request.args.get('user_id')
         return render_template('activate.html', salon_id=salon_id, user_id=user_id)
+
+
+def activate_salon_integration(salon_id, user_id, api_key, application_id, webhook_urls, callback_url):
+    """Активирует интеграцию для конкретного салона."""
+    try:
+        success, user_yclients_id, response = yclients.activate_integration(
+            salon_id, api_key)
+        if success:
+            app.logger.info(
+                f"Integration successfully activated for salon {salon_id}, USER_ID: {user_yclients_id}")
+            # Сохраняем данные в базе данных
+            entry = UsersYclients(
+                user_id=user_id, salon_id=salon_id, user_yclients_id=user_yclients_id)
+            db.session.add(entry)
+            db.session.commit()
+
+            # Отправляем настройки интеграции
+            success, message = yclients.send_integration_settings(
+                salon_id, application_id, api_key, webhook_urls, callback_url)
+            if success:
+                app.logger.info(
+                    f"Integration settings successfully sent for salon {salon_id}")
+                return True, "Success"
+            else:
+                app.logger.error(
+                    f"Error sending integration settings for salon {salon_id}: {message}")
+                return False, f"Error sending settings: {message}"
+        else:
+            app.logger.error(
+                f"Error activating integration for salon {salon_id}: {response}")
+            return False, f"Error activating: {response}"
+    except Exception as e:
+        app.logger.error(
+            f"Exception during activation for salon {salon_id}: {str(e)}")
+        return False, f"Exception: {str(e)}"
 
 
 @app.route('/get_bot_link', methods=['POST'])
