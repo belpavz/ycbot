@@ -192,7 +192,7 @@ def signup():
             app.logger.info(
                 f"Декодированные данные пользователя: {decoded_user_data}")
 
-            # Проверка подписи (подтвержена)
+            # Проверка подписи
             if utils.verify_signature(user_data, user_data_sign, app.config['PARTNER_TOKEN']):
                 # Автоматическая регистрация пользователя
                 if decoded_user_data:
@@ -215,20 +215,10 @@ def signup():
                         else:
                             user_id = user.id
 
-                    # Перенаправляем на активацию
+                        # Перенаправляем на активацию
                         return redirect(url_for('activate', salon_id=salon_id, user_id=user_id))
             else:
                 app.logger.warning("Недействительная подпись данных")
-                decoded_user_data = None
-        except Exception as e:
-            app.logger.error(
-                f"Ошибка при обработке данных пользователя: {str(e)}")
-            decoded_user_data = None
-
-            # Проверка подписи (не подтверждена)
-            if not utils.verify_signature(user_data, user_data_sign, app.config['PARTNER_TOKEN']):
-                app.logger.warning("Недействительная подпись данных")
-                # Продолжаем выполнение, но не используем данные пользователя
                 decoded_user_data = None
         except Exception as e:
             app.logger.error(
