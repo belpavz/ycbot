@@ -54,6 +54,39 @@ def get_user_api(context):
         return YClientsAPI(token=YCLIENTS_API_TOKEN, company_id=COMPANY_ID, form_id=FORM_ID)
 
 
+# Проверка интеграции для салона.
+def is_integration_active(user_id, company_id):
+    from app import UsersYclients, db
+
+    # Проверяем, есть ли активная интеграция для данного салона
+    salon_integration = UsersYclients.query.filter_by(
+        salon_id=company_id,
+        is_active=True
+    ).first()
+
+    if salon_integration:
+        # Интеграция для салона активна
+        return True
+    else:
+        # Проверяем, является ли пользователь администратором с отключенной интеграцией
+        admin_entry = UsersYclients.query.filter_by(
+            user_id=user_id,
+            salon_id=company_id,
+            is_active=False
+        ).first()
+
+        if admin_entry:
+            # Это администратор с отключенной интеграцией
+            return False
+        else:
+            # Проверяем, есть ли вообще интеграция для этого салона
+            any_integration = UsersYclients.query.filter_by(
+                salon_id=company_id
+            ).first()
+
+            return any_integration is not None
+
+
 # Загрузка и сохранение базы данных телефонов
 def get_user_phone(telegram_id):
     user_phone = UserPhone.query.filter_by(
@@ -215,6 +248,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def book(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    company_id = context.user_data.get("company_id", COMPANY_ID)
+    user_id = update.effective_user.id
+
+    # Проверяем активность интеграции
+    if not is_integration_active(user_id, company_id):
+        await update.message.reply_text(
+            "Интеграция с YClients отключена. Пожалуйста, подключите интеграцию снова."
+        )
+        return
     try:
         await context.bot.delete_message(
             chat_id=update.effective_chat.id,

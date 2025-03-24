@@ -57,6 +57,7 @@ class UsersYclients(db.Model):
     user_id = db.Column(db.Integer)
     salon_id = db.Column(db.Integer)
     user_yclients_id = db.Column(db.Integer)
+    is_active = db.Column(db.Boolean, default=True)
 
     def __repr__(self):
         return f'<UsersYclients {self.user_id} {self.salon_id} {self.user_yclients_id}>'
@@ -104,6 +105,17 @@ class WebhookEvent(db.Model):
 
     def __repr__(self):
         return f'<WebhookEvent {self.event_type} {self.salon_id}>'
+
+
+# Модель для хранения ролей пользователей
+class UserRole(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer)
+    salon_id = db.Column(db.Integer)
+    role = db.Column(db.String(20))  # 'admin', 'client', etc.
+
+    def __repr__(self):
+        return f'<UserRole {self.user_id} {self.salon_id} {self.role}>'
 
 
 # Функция для сохранения событий вебхуков
@@ -315,13 +327,13 @@ def callback():
         if event == 'integration_disabled' or event == 'uninstall':
             app.logger.info(
                 f"Processing {event} event for salon_id: {salon_id}")
-            # Удаление записей из базы данных при отключении интеграции
+            # Деактивация записей вместо удаления
             entries = UsersYclients.query.filter_by(salon_id=salon_id).all()
             for entry in entries:
-                db.session.delete(entry)
+                entry.is_active = False
             db.session.commit()
             app.logger.info(
-                f"Integration data removed for salon_id: {salon_id}")
+                f"Integration data deactivated for salon_id: {salon_id}")
         else:
             app.logger.warning(f"Unknown event type: {event}")
 
@@ -356,7 +368,8 @@ def profile():
     if user_id:
         user = User.query.get(user_id)
         # Получаем salon_id и form_id из базы данных
-        user_yclients = UsersYclients.query.filter_by(user_id=user_id).first()
+        user_yclients = UsersYclients.query.filter_by(
+            user_id=user_id, is_active=True).first()
         salon_id = user_yclients.salon_id if user_yclients else None
         form_id = "1"  # Получите реальный form_id из конфигурации или базы данных
         return render_template('profile.html', user=user, salon_id=salon_id, form_id=form_id)
@@ -415,15 +428,18 @@ def activate():
 def activate_salon_integration(salon_id, user_id, api_key, application_id, webhook_urls, callback_url):
     """Активирует интеграцию для конкретного салона."""
     try:
-        success, user_yclients_id, response = yclients.activate_integration(
-            salon_id, api_key)
-        if success:
+        # Проверяем, есть ли деактивированная запись
+        existing_entry = UsersYclients.query.filter_by(
+            salon_id=salon_id,
+            user_id=user_id,
+            is_active=False
+        ).first()
+
+        if existing_entry:
+            # Если запись существует, активируем её
             app.logger.info(
-                f"Integration successfully activated for salon {salon_id}, USER_ID: {user_yclients_id}")
-            # Сохраняем данные в базе данных
-            entry = UsersYclients(
-                user_id=user_id, salon_id=salon_id, user_yclients_id=user_yclients_id)
-            db.session.add(entry)
+                f"Reactivating existing integration for salon {salon_id}, USER_ID: {user_id}")
+            existing_entry.is_active = True
             db.session.commit()
 
             # Отправляем настройки интеграции
@@ -438,9 +454,37 @@ def activate_salon_integration(salon_id, user_id, api_key, application_id, webho
                     f"Error sending integration settings for salon {salon_id}: {message}")
                 return False, f"Error sending settings: {message}"
         else:
-            app.logger.error(
-                f"Error activating integration for salon {salon_id}: {response}")
-            return False, f"Error activating: {response}"
+            # Если записи нет, создаем новую
+            success, user_yclients_id, response = yclients.activate_integration(
+                salon_id, api_key)
+            if success:
+                app.logger.info(
+                    f"Integration successfully activated for salon {salon_id}, USER_ID: {user_yclients_id}")
+                # Сохраняем данные в базе данных
+                entry = UsersYclients(
+                    user_id=user_id,
+                    salon_id=salon_id,
+                    user_yclients_id=user_yclients_id,
+                    is_active=True
+                )
+                db.session.add(entry)
+                db.session.commit()
+
+                # Отправляем настройки интеграции
+                success, message = yclients.send_integration_settings(
+                    salon_id, application_id, api_key, webhook_urls, callback_url)
+                if success:
+                    app.logger.info(
+                        f"Integration settings successfully sent for salon {salon_id}")
+                    return True, "Success"
+                else:
+                    app.logger.error(
+                        f"Error sending integration settings for salon {salon_id}: {message}")
+                    return False, f"Error sending settings: {message}"
+            else:
+                app.logger.error(
+                    f"Error activating integration for salon {salon_id}: {response}")
+                return False, f"Error activating: {response}"
     except Exception as e:
         app.logger.error(
             f"Exception during activation for salon {salon_id}: {str(e)}")
