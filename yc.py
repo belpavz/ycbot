@@ -5,7 +5,7 @@ import json
 
 def activate_integration(salon_id, api_key, webhook_urls):
     """Активирует интеграцию для указанного salon_id."""
-    url = f"https://api.yclients.com/marketplace/partner/callback/"
+    url = "https://api.yclients.com/marketplace/partner/callback/"
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"

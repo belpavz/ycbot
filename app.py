@@ -448,7 +448,10 @@ def activate_salon_integration(salon_id, user_id, api_key, application_id, webho
 
         # Если записи нет в базе данных
         success, user_yclients_id, response = yclients.activate_integration(
-            salon_id, api_key, webhook_urls=webhook_urls)
+            salon_id=salon_id,
+            api_key=api_key,
+            webhook_urls=webhook_urls
+        )
         if success:
             app.logger.info(
                 f"Integration successfully activated for salon {salon_id}, USER_ID: {user_yclients_id}")
@@ -474,8 +477,12 @@ def activate_salon_integration(salon_id, user_id, api_key, application_id, webho
                     f"Error sending integration settings for salon {salon_id}: {message}")
                 return False, f"Ошибка отправки настроек: {message}"
         else:
-            error_message = response.get("meta", {}).get(
-                "message", "Неизвестная ошибка")
+            # Обработка строки вместо словаря
+            if isinstance(response, str):
+                error_message = response  # Если response — строка (ошибка)
+            else:
+                error_message = response.get("meta", {}).get(
+                    "message", "Неизвестная ошибка")
             app.logger.error(
                 f"Error activating integration for salon {salon_id}: {error_message}")
             return False, error_message
