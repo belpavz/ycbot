@@ -2,7 +2,7 @@
 from flask import Flask, request, render_template, redirect, url_for, session, jsonify
 import config
 import utils
-import yclients
+import yc as yclients
 import json
 from flask_sqlalchemy import SQLAlchemy
 import bcrypt
@@ -382,13 +382,11 @@ def profile():
 def activate():
     if request.method == 'POST':
         salon_id = request.form.get('salon_id')
-        salon_ids = request.form.getlist('salon_ids[]')
         user_id = request.form.get('user_id')
 
-        api_key = app.config['API_KEY']
+        api_key = app.config['PARTNER_TOKEN']
         application_id = app.config['APPLICATION_ID']
 
-        # Формируем полные URL для вебхуков
         base_url = request.host_url.rstrip('/')
         webhook_urls = [f"{base_url}/webhook"]
         callback_url = f"{base_url}/callback"
@@ -396,30 +394,20 @@ def activate():
         app.logger.info(
             f"Configuring webhooks: {webhook_urls} and callback: {callback_url}")
 
-        success_count = 0
-        error_count = 0
+        success, result_message = activate_salon_integration(
+            salon_id=salon_id,
+            user_id=user_id,
+            api_key=api_key,
+            application_id=application_id,
+            webhook_urls=webhook_urls,
+            callback_url=callback_url
+        )
 
-        if salon_ids:
-            for salon_id_item in salon_ids:
-                success, result = activate_salon_integration(
-                    salon_id_item, user_id, api_key, application_id, webhook_urls, callback_url)
-                if success:
-                    success_count += 1
-                else:
-                    error_count += 1
+        if success:
+            return render_template('activate.html', message="Интеграция успешно активирована.")
         else:
-            success, result = activate_salon_integration(
-                salon_id, user_id, api_key, application_id, webhook_urls, callback_url)
-            if success:
-                success_count += 1
-            else:
-                error_count += 1
-
-        if error_count == 0:
-            return f"Integration activated successfully for {success_count} salons!", 200
-        else:
-            return f"Integration activated with errors. Success: {success_count}, Errors: {error_count}. Check logs for details.", 200
-    else:  # GET запрос
+            return render_template('activate.html', error_message=result_message)
+    else:
         salon_id = request.args.get('salon_id')
         user_id = request.args.get('user_id')
         return render_template('activate.html', salon_id=salon_id, user_id=user_id)
@@ -428,46 +416,22 @@ def activate():
 def activate_salon_integration(salon_id, user_id, api_key, application_id, webhook_urls, callback_url):
     """Активирует интеграцию для конкретного салона."""
     try:
-        # Проверяем, есть ли деактивированная запись
+        # Проверяем наличие записи в базе данных
         existing_entry = UsersYclients.query.filter_by(
             salon_id=salon_id,
-            user_id=user_id,
-            is_active=False
+            user_id=user_id
         ).first()
 
         if existing_entry:
-            # Если запись существует, активируем её
-            app.logger.info(
-                f"Reactivating existing integration for salon {salon_id}, USER_ID: {user_id}")
-            existing_entry.is_active = True
-            db.session.commit()
-
-            # Отправляем настройки интеграции
-            success, message = yclients.send_integration_settings(
-                salon_id, application_id, api_key, webhook_urls, callback_url)
-            if success:
+            if existing_entry.is_active:
                 app.logger.info(
-                    f"Integration settings successfully sent for salon {salon_id}")
-                return True, "Success"
+                    f"Integration already active for salon {salon_id}, USER_ID: {user_id}")
+                return True, "Интеграция уже активна."
             else:
-                app.logger.error(
-                    f"Error sending integration settings for salon {salon_id}: {message}")
-                return False, f"Error sending settings: {message}"
-        else:
-            # Если записи нет, создаем новую
-            success, user_yclients_id, response = yclients.activate_integration(
-                salon_id, api_key)
-            if success:
+                # Реактивируем запись
                 app.logger.info(
-                    f"Integration successfully activated for salon {salon_id}, USER_ID: {user_yclients_id}")
-                # Сохраняем данные в базе данных
-                entry = UsersYclients(
-                    user_id=user_id,
-                    salon_id=salon_id,
-                    user_yclients_id=user_yclients_id,
-                    is_active=True
-                )
-                db.session.add(entry)
+                    f"Reactivating integration for salon {salon_id}, USER_ID: {user_id}")
+                existing_entry.is_active = True
                 db.session.commit()
 
                 # Отправляем настройки интеграции
@@ -476,19 +440,50 @@ def activate_salon_integration(salon_id, user_id, api_key, application_id, webho
                 if success:
                     app.logger.info(
                         f"Integration settings successfully sent for salon {salon_id}")
-                    return True, "Success"
+                    return True, "Интеграция успешно активирована."
                 else:
                     app.logger.error(
                         f"Error sending integration settings for salon {salon_id}: {message}")
-                    return False, f"Error sending settings: {message}"
+                    return False, f"Ошибка отправки настроек: {message}"
+
+        # Если записи нет в базе данных
+        success, user_yclients_id, response = yclients.activate_integration(
+            salon_id, api_key, webhook_urls=webhook_urls)
+        if success:
+            app.logger.info(
+                f"Integration successfully activated for salon {salon_id}, USER_ID: {user_yclients_id}")
+            # Сохраняем данные в базе данных
+            entry = UsersYclients(
+                user_id=user_id,
+                salon_id=salon_id,
+                user_yclients_id=user_yclients_id,
+                is_active=True
+            )
+            db.session.add(entry)
+            db.session.commit()
+
+            # Отправляем настройки интеграции
+            success, message = yclients.send_integration_settings(
+                salon_id, application_id, api_key, webhook_urls, callback_url)
+            if success:
+                app.logger.info(
+                    f"Integration settings successfully sent for salon {salon_id}")
+                return True, "Интеграция успешно активирована."
             else:
                 app.logger.error(
-                    f"Error activating integration for salon {salon_id}: {response}")
-                return False, f"Error activating: {response}"
+                    f"Error sending integration settings for salon {salon_id}: {message}")
+                return False, f"Ошибка отправки настроек: {message}"
+        else:
+            error_message = response.get("meta", {}).get(
+                "message", "Неизвестная ошибка")
+            app.logger.error(
+                f"Error activating integration for salon {salon_id}: {error_message}")
+            return False, error_message
+
     except Exception as e:
         app.logger.error(
             f"Exception during activation for salon {salon_id}: {str(e)}")
-        return False, f"Exception: {str(e)}"
+        return False, f"Исключение: {str(e)}"
 
 
 @app.route('/get_bot_link', methods=['POST'])
