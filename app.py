@@ -384,6 +384,21 @@ def activate():
         salon_id = request.form.get('salon_id')
         user_id = request.form.get('user_id')
 
+        # Добавьте проверку на пустые значения
+        if not salon_id or not user_id:
+            app.logger.error(
+                f"Пустые значения: salon_id={salon_id}, user_id={user_id}")
+            return render_template('activate.html', error_message="Отсутствуют обязательные параметры")
+
+        # Убедитесь, что значения являются целыми числами
+        try:
+            salon_id = int(salon_id)
+            user_id = int(user_id)
+        except ValueError:
+            app.logger.error(
+                f"Некорректные значения: salon_id={salon_id}, user_id={user_id}")
+            return render_template('activate.html', error_message="Некорректные параметры")
+
         api_key = app.config['PARTNER_TOKEN']
         application_id = app.config['APPLICATION_ID']
 
@@ -410,12 +425,29 @@ def activate():
     else:
         salon_id = request.args.get('salon_id')
         user_id = request.args.get('user_id')
+
+        # Добавьте проверку на пустые значения
+        if not salon_id or not user_id:
+            app.logger.error(
+                f"Пустые значения при GET-запросе: salon_id={salon_id}, user_id={user_id}")
+            return render_template('activate.html', error_message="Отсутствуют обязательные параметры")
+
         return render_template('activate.html', salon_id=salon_id, user_id=user_id)
 
 
 def activate_salon_integration(salon_id, user_id, api_key, application_id, webhook_urls, callback_url):
     """Активирует интеграцию для конкретного салона."""
     try:
+        # Проверка типов данных
+        if not salon_id or not user_id:
+            app.logger.error(
+                f"Пустые значения в activate_salon_integration: salon_id={salon_id}, user_id={user_id}")
+            return False, "Отсутствуют обязательные параметры"
+
+        # Убедитесь, что значения являются целыми числами
+        salon_id = int(salon_id) if not isinstance(salon_id, int) else salon_id
+        user_id = int(user_id) if not isinstance(user_id, int) else user_id
+
         # Проверяем наличие записи в базе данных
         existing_entry = UsersYclients.query.filter_by(
             salon_id=salon_id,
@@ -452,6 +484,29 @@ def activate_salon_integration(salon_id, user_id, api_key, application_id, webho
             api_key=api_key,
             webhook_urls=webhook_urls
         )
+
+        # Проверяем ответ на наличие сообщения о том, что приложение уже установлено
+        if isinstance(response, dict) and response.get("meta", {}).get("message") == "Приложение уже установлено":
+            app.logger.info(
+                f"Application already installed for salon {salon_id}")
+
+            # Создаем запись в базе, так как интеграция существует, но не отражена в нашей БД
+            entry = UsersYclients(
+                user_id=user_id,
+                salon_id=salon_id,
+                # ID пользователя неизвестен, можно получить через другой API-запрос
+                user_yclients_id=None,
+                is_active=True
+            )
+            db.session.add(entry)
+            db.session.commit()
+
+            # Обновляем настройки интеграции
+            success, message = yclients.send_integration_settings(
+                salon_id, application_id, api_key, webhook_urls, callback_url)
+
+            return True, "Интеграция уже установлена и была активирована в системе."
+
         if success:
             app.logger.info(
                 f"Integration successfully activated for salon {salon_id}, USER_ID: {user_yclients_id}")
@@ -479,6 +534,23 @@ def activate_salon_integration(salon_id, user_id, api_key, application_id, webho
         else:
             # Обработка строки вместо словаря
             if isinstance(response, str):
+                # Проверяем, содержит ли строка ответа информацию о том, что приложение уже установлено
+                if "Пользователь уже установил это приложение" in response:
+                    app.logger.info(
+                        f"Application already installed for salon {salon_id} (from error message)")
+
+                    # Создаем запись в базе
+                    entry = UsersYclients(
+                        user_id=user_id,
+                        salon_id=salon_id,
+                        user_yclients_id=None,
+                        is_active=True
+                    )
+                    db.session.add(entry)
+                    db.session.commit()
+
+                    return True, "Интеграция уже установлена и была активирована в системе."
+
                 error_message = response  # Если response — строка (ошибка)
             else:
                 error_message = response.get("meta", {}).get(
@@ -490,6 +562,9 @@ def activate_salon_integration(salon_id, user_id, api_key, application_id, webho
     except Exception as e:
         app.logger.error(
             f"Exception during activation for salon {salon_id}: {str(e)}")
+        # Добавляем логирование полного ответа при ошибке
+        if hasattr(e, 'response') and e.response is not None:
+            app.logger.error(f"Response content: {e.response.text}")
         return False, f"Исключение: {str(e)}"
 
 
