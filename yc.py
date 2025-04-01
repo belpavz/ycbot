@@ -3,18 +3,24 @@ import requests
 import json
 
 
-def activate_integration(salon_id, api_key, webhook_urls):
+def activate_integration(salon_id, api_key, webhook_urls, application_id, callback_url=None):
     """Активирует интеграцию для указанного salon_id."""
     url = "https://api.yclients.com/marketplace/partner/callback/"
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
-        "Accept": "application/vnd.yclients.v2+json"  # Добавляем заголовок Accept
+        "Accept": "application/vnd.yclients.v2+json"
     }
     data = {
         "salon_id": salon_id,
+        "application_id": application_id,
         "webhook_urls": webhook_urls
     }
+
+    # Добавляем callback_url в запрос, если он передан
+    if callback_url:
+        data["callback_url"] = callback_url
+
     try:
         response = requests.post(url, headers=headers, json=data)
         response_json = response.json()

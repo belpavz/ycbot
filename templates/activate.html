@@ -6,6 +6,11 @@
 </head>
 <body>
     <h1>Активация интеграции</h1>
+    {% if message %}
+    <p style="color: green;">{{ message }}</p>
+    {% elif error_message %}
+    <p style="color: red;">{{ error_message }}</p>
+    {% endif %}
     <form method="POST" action="/activate">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="salon_id" value="{{ salon_id }}">

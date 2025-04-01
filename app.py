@@ -482,7 +482,9 @@ def activate_salon_integration(salon_id, user_id, api_key, application_id, webho
         success, user_yclients_id, response = yclients.activate_integration(
             salon_id=salon_id,
             api_key=api_key,
-            webhook_urls=webhook_urls
+            webhook_urls=webhook_urls,
+            application_id=application_id,
+            callback_url=callback_url
         )
 
         # Проверяем ответ на наличие сообщения о том, что приложение уже установлено
