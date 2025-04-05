@@ -1,6 +1,6 @@
 import logging
 from dotenv import load_dotenv
-from app import db, UserPhone
+from app2 import db, UserPhone
 import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, constants
 from telegram.ext import (
@@ -56,7 +56,7 @@ def get_user_api(context):
 
 # Проверка интеграции для салона.
 def is_integration_active(user_id, company_id):
-    from app import UsersYclients, db
+    from app2 import UsersYclients, db
 
     # Проверяем, есть ли активная интеграция для данного салона
     salon_integration = UsersYclients.query.filter_by(
