@@ -372,6 +372,7 @@ def signup():
                                 created_at=datetime.utcnow(),
                                 updated_at=datetime.utcnow()
                             )
+
                             # Генерируем случайный пароль
                             temp_password = os.urandom(8).hex()
                             new_user.set_password(temp_password)
@@ -384,17 +385,17 @@ def signup():
                                          {"email": email, "name": new_user.name})
                         else:
                             user_id = user.id
-
                             # Проверяем, активен ли пользователь
                             if not user.is_active:
                                 user.is_active = True
                                 db.session.commit()
-
                                 # Логируем активацию пользователя
                                 log_activity(user_id, "user_activated", "user", user_id,
                                              {"email": email})
 
                         # Перенаправляем на активацию
+                        app.logger.info(
+                            f"Перенаправление на activate с salon_id={salon_id}, user_id={user_id}")
                         return redirect(url_for('activate', salon_id=salon_id, user_id=user_id))
             else:
                 app.logger.warning("Недействительная подпись данных")
@@ -415,12 +416,10 @@ def signup():
             user = User.query.filter_by(email=email).first()
             if user:
                 user_id = user.id
-
                 # Проверяем, активен ли пользователь
                 if not user.is_active:
                     user.is_active = True
                     db.session.commit()
-
                     # Логируем активацию пользователя
                     log_activity(user_id, "user_activated", "user", user_id,
                                  {"email": email})
@@ -434,6 +433,7 @@ def signup():
                     created_at=datetime.utcnow(),
                     updated_at=datetime.utcnow()
                 )
+
                 new_user.set_password(password)  # Хешируем пароль
                 db.session.add(new_user)
                 db.session.commit()
@@ -444,6 +444,8 @@ def signup():
                              {"email": email, "name": name})
 
             # После успешной регистрации перенаправляем на страницу активации
+            app.logger.info(
+                f"POST: Перенаправление на activate с salon_id={salon_id}, user_id={user_id}")
             return redirect(url_for('activate', salon_id=salon_id, user_id=user_id))
         except Exception as e:
             app.logger.error(f"Ошибка при регистрации: {e}")
@@ -468,7 +470,6 @@ def webhook():
     try:
         data = request.json
         app.logger.info(f"Webhook received: {data}")
-
         resource = data.get('resource')
         company_id = data.get('company_id')
         salon_id = data.get('data', {}).get('company_id') or company_id
@@ -481,15 +482,12 @@ def webhook():
             db.session.add(salon)
             db.session.commit()
 
-        # Сохраняем событие в базу данных
-        webhook_event = WebhookEvent(
-            event_type='webhook',
-            resource=resource,
-            salon_id=salon.id,
-            data=json.dumps(data)
-        )
-        db.session.add(webhook_event)
-        db.session.commit()
+        # Используем функцию для сохранения события
+        webhook_id = save_webhook_event('webhook', resource, salon.id, data)
+
+        if not webhook_id:
+            app.logger.error("Failed to save webhook event")
+            return jsonify({"success": False, "error": "Failed to save webhook event"}), 500
 
         # Кэшируем часто используемые данные
         if resource == 'staff' or resource == 'service':
@@ -522,7 +520,6 @@ def callback():
     try:
         data = request.json
         app.logger.info(f"Callback received: {data}")
-
         salon_id = data.get('salon_id')
         application_id = data.get('application_id')
         event = data.get('event')
@@ -536,28 +533,22 @@ def callback():
             db.session.add(salon)
             db.session.commit()
 
-        # Сохраняем событие в базу данных
-        webhook_event = WebhookEvent(
-            event_type='callback',
-            resource=event,
-            salon_id=salon.id,
-            data=json.dumps(data)
-        )
-        db.session.add(webhook_event)
-        db.session.commit()
+        # Используем функцию для сохранения события
+        webhook_id = save_webhook_event('callback', event, salon.id, data)
+
+        if not webhook_id:
+            app.logger.error("Failed to save callback event")
+            return jsonify({"success": False, "error": "Failed to save callback event"}), 500
 
         if event == 'integration_disabled' or event == 'uninstall':
             app.logger.info(
                 f"Processing {event} event for salon_id: {salon_id}")
-
             # Деактивируем салон
             salon.integration_active = False
             db.session.commit()
-
             # Логируем действие
             log_activity(None, f"integration_{event}", "salon", salon.id,
                          {"salon_id": salon_id, "application_id": application_id})
-
             app.logger.info(
                 f"Integration data deactivated for salon_id: {salon_id}")
         else:
@@ -640,7 +631,6 @@ def activate():
 
         api_key = app.config['PARTNER_TOKEN']
         application_id = app.config['APPLICATION_ID']
-
         base_url = request.host_url.rstrip('/')
         webhook_urls = [f"{base_url}/webhook"]
         callback_url = f"{base_url}/callback"
@@ -671,6 +661,8 @@ def activate():
                 f"Пустые значения при GET-запросе: salon_id={salon_id}, user_id={user_id}")
             return render_template('activate.html', error_message="Отсутствуют обязательные параметры")
 
+        app.logger.info(
+            f"GET: Отображение страницы активации с salon_id={salon_id}, user_id={user_id}")
         return render_template('activate.html', salon_id=salon_id, user_id=user_id)
 
 
@@ -969,94 +961,6 @@ def manage_roles():
                            roles=roles)
 
 
-@app.route('/manage_roles', methods=['GET', 'POST'])
-def manage_roles():
-    user_id = session.get('user_id')
-    if not user_id:
-        return redirect(url_for('login'))
-
-    # Проверяем, является ли пользователь администратором
-    is_admin = False
-    admin_salons = []
-
-    user_roles = UserRole.query.filter_by(
-        user_id=user_id, is_active=True).all()
-    for user_role in user_roles:
-        role = Role.query.get(user_role.role_id)
-        if role and role.name == 'admin':
-            is_admin = True
-            admin_salons.append(user_role.salon_id)
-
-    if not is_admin:
-        return redirect(url_for('profile'))
-
-    if request.method == 'POST':
-        action = request.form.get('action')
-        target_user_id = request.form.get('target_user_id')
-        salon_id = request.form.get('salon_id')
-        role_id = request.form.get('role_id')
-
-        # Проверяем, имеет ли пользователь права администратора для этого салона
-        if int(salon_id) not in admin_salons:
-            return jsonify({"success": False, "error": "Нет прав администратора для этого салона"}), 403
-
-        if action == 'add':
-            # Добавление роли
-            new_role = UserRole(
-                user_id=target_user_id,
-                salon_id=salon_id,
-                role_id=role_id,
-                is_active=True
-            )
-            db.session.add(new_role)
-            db.session.commit()
-
-            # Логируем действие
-            role = Role.query.get(role_id)
-            role_name = role.name if role else "unknown"
-            log_activity(user_id, "add_role", "user", target_user_id,
-                         {"salon_id": salon_id, "role": role_name})
-
-            return jsonify({"success": True})
-
-        elif action == 'remove':
-            # Удаление роли
-            user_role = UserRole.query.filter_by(
-                user_id=target_user_id,
-                salon_id=salon_id,
-                role_id=role_id,
-                is_active=True
-            ).first()
-
-            if user_role:
-                user_role.is_active = False
-                db.session.commit()
-
-                # Логируем действие
-                role = Role.query.get(role_id)
-                role_name = role.name if role else "unknown"
-                log_activity(user_id, "remove_role", "user", target_user_id,
-                             {"salon_id": salon_id, "role": role_name})
-
-                return jsonify({"success": True})
-            else:
-                return jsonify({"success": False, "error": "Роль не найдена"}), 404
-
-    # Получаем список салонов, где пользователь является администратором
-    salons = []
-    for salon_id in admin_salons:
-        salon = Salon.query.get(salon_id)
-        if salon and salon.is_active:
-            salons.append(salon)
-
-    # Получаем список ролей
-    roles = Role.query.all()
-
-    return render_template('manage_roles.html',
-                           salons=salons,
-                           roles=roles)
-
-
 @app.route('/activity_logs')
 def activity_logs():
     user_id = session.get('user_id')
@@ -1118,6 +1022,26 @@ def activity_logs():
                            action=action,
                            date_from=date_from,
                            date_to=date_to)
+
+
+@app.route('/db-test')
+def db_test():
+    try:
+        result = db.session.execute('SELECT 1').scalar()
+        return f"Database connection test: {result}"
+    except Exception as e:
+        return f"Database connection error: {str(e)}"
+
+
+@app.route('/config-test')
+def config_test():
+    return f"PARTNER_TOKEN exists: {'PARTNER_TOKEN' in app.config}"
+
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    app.logger.error(f"Unhandled exception: {str(e)}")
+    return "Internal Server Error", 500
 
 
 # Запуск миграции данных при запуске приложения

@@ -27,7 +27,16 @@ def verify_signature(user_data_encoded, user_data_sign, partner_token):
             user_data_str.encode('utf-8'),
             hashlib.sha256
         ).hexdigest()
+
+        # Добавляем логирование для отладки
+        import logging
+        logger = logging.getLogger('utils')
+        logger.info(f"Expected signature: {expected_signature[:10]}...")
+        logger.info(f"Received signature: {user_data_sign[:10]}...")
+
         return hmac.compare_digest(user_data_sign, expected_signature)
     except (base64.binascii.Error, UnicodeDecodeError) as e:
-        print(f"Ошибка проверки подписи: {e}")
+        import logging
+        logger = logging.getLogger('utils')
+        logger.error(f"Ошибка проверки подписи: {e}")
         return False
