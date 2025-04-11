@@ -17,3 +17,6 @@ class Config:
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
         f'postgresql://ycbotuser:{DATABASE_PASSWORD}@localhost/ycbase?sslmode=require&keepalives=1&keepalives_idle=60&keepalives_interval=10&keepalives_count=5'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    YCLIENTS_CLIENT_ID = os.environ.get('YCLIENTS_CLIENT_ID')
+    YCLIENTS_CLIENT_SECRET = os.environ.get('YCLIENTS_CLIENT_SECRET')
+    OAUTH_REDIRECT_URI = os.environ.get('OAUTH_REDIRECT_URI')

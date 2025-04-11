@@ -5,6 +5,28 @@ import bcrypt
 db = SQLAlchemy()
 
 
+# Таблица для хранения OAuth-токенов
+class OAuthToken(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    salon_id = db.Column(db.Integer, db.ForeignKey('salon.id'), nullable=False)
+    access_token = db.Column(db.String(255), nullable=False)
+    refresh_token = db.Column(db.String(255), nullable=False)
+    token_type = db.Column(db.String(50), default='Bearer')
+    expires_at = db.Column(db.DateTime, nullable=False)
+    scope = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Отношение к салону
+    salon = db.relationship('Salon', backref='oauth_tokens')
+
+    @property
+    def is_expired(self):
+        """Проверяет, истек ли срок действия токена"""
+        return datetime.utcnow() > self.expires_at
+
+
 # Определение модели данных для связи с Yclients
 class UsersYclients(db.Model):
     id = db.Column(db.Integer, primary_key=True)

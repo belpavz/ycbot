@@ -327,6 +327,72 @@ def debug_params():
     return jsonify(params)
 
 
+@app.route('/oauth/authorize')
+def oauth_authorize():
+    """Перенаправляет пользователя на страницу авторизации YClients"""
+    salon_id = request.args.get('salon_id')
+    if not salon_id:
+        return "Отсутствует идентификатор салона", 400
+
+    # Сохраняем salon_id в сессии для последующего использования
+    session['oauth_salon_id'] = salon_id
+
+    # Формируем URL для OAuth-авторизации
+    client_id = app.config['YCLIENTS_CLIENT_ID']
+    redirect_uri = url_for('oauth_callback', _external=True)
+    # Генерируем случайное состояние для защиты от CSRF
+    state = os.urandom(16).hex()
+    session['oauth_state'] = state
+
+    oauth_url = get_oauth_url(client_id, redirect_uri, state)
+    return redirect(oauth_url)
+
+
+@app.route('/oauth/callback')
+def oauth_callback():
+    """Обрабатывает callback от YClients после авторизации"""
+    # Проверяем state для защиты от CSRF
+    state = request.args.get('state')
+    if state != session.get('oauth_state'):
+        return "Недействительный state параметр", 400
+
+    # Получаем код авторизации
+    code = request.args.get('code')
+    if not code:
+        return "Отсутствует код авторизации", 400
+
+    # Получаем salon_id из сессии
+    salon_id = session.get('oauth_salon_id')
+    if not salon_id:
+        return "Отсутствует идентификатор салона в сессии", 400
+
+    # Обмениваем код на токены
+    client_id = app.config['YCLIENTS_CLIENT_ID']
+    client_secret = app.config['YCLIENTS_CLIENT_SECRET']
+    redirect_uri = url_for('oauth_callback', _external=True)
+
+    token_data = exchange_code_for_token(
+        client_id, client_secret, code, redirect_uri)
+    if not token_data:
+        return "Не удалось получить токены доступа", 400
+
+    # Сохраняем токены в базе данных
+    if save_oauth_token(salon_id, token_data):
+        # Очищаем данные OAuth из сессии
+        session.pop('oauth_salon_id', None)
+        session.pop('oauth_state', None)
+
+        # Активируем интеграцию для салона
+        salon = Salon.query.filter_by(salon_id=salon_id).first()
+        if salon:
+            salon.integration_active = True
+            db.session.commit()
+
+        return redirect(url_for('profile', message="Интеграция успешно активирована"))
+    else:
+        return "Не удалось сохранить токены доступа", 500
+
+
 @app.route('/signup', methods=['GET', 'POST'])
 @csrf.exempt
 def signup():

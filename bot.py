@@ -40,6 +40,69 @@ if not all([YCLIENTS_API_TOKEN, COMPANY_ID, FORM_ID, TELEGRAM_BOT_TOKEN]):
 # Создаем функцию для получения API для конкретного пользователя
 
 
+class YClientsAPI:
+    def __init__(self, token=None, company_id=None, form_id=None, client_id=None, client_secret=None):
+        self.token = token  # Партнерский токен (для обратной совместимости)
+        self.company_id = company_id
+        self.form_id = form_id
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.base_url = "https://api.yclients.com/api/v1"
+
+    def _make_request(self, endpoint, method="GET", data=None, params=None):
+        """Выполняет запрос к API YClients"""
+        url = f"{self.base_url}/{endpoint}"
+
+        # Сначала пробуем использовать OAuth
+        if self.company_id and self.client_id and self.client_secret:
+            access_token = get_valid_oauth_token(
+                self.company_id, self.client_id, self.client_secret)
+            if access_token:
+                headers = {
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json",
+                    "Accept": "application/vnd.yclients.v2+json"
+                }
+
+                try:
+                    if method.upper() == "GET":
+                        response = requests.get(
+                            url, headers=headers, params=params)
+                    elif method.upper() == "POST":
+                        response = requests.post(
+                            url, headers=headers, json=data)
+                    else:
+                        return {"success": False, "meta": {"message": "Неподдерживаемый метод HTTP"}}
+
+                    return response.json()
+                except Exception as e:
+                    logger.error(f"Ошибка при выполнении запроса с OAuth: {e}")
+
+        # Если OAuth не сработал или не настроен, используем партнерский токен
+        if self.token:
+            headers = {
+                "Authorization": f"Bearer {self.token}",
+                "Content-Type": "application/json",
+                "Accept": "application/vnd.yclients.v2+json"
+            }
+
+            try:
+                if method.upper() == "GET":
+                    response = requests.get(
+                        url, headers=headers, params=params)
+                elif method.upper() == "POST":
+                    response = requests.post(url, headers=headers, json=data)
+                else:
+                    return {"success": False, "meta": {"message": "Неподдерживаемый метод HTTP"}}
+
+                return response.json()
+            except Exception as e:
+                logger.error(
+                    f"Ошибка при выполнении запроса с партнерским токеном: {e}")
+
+        return {"success": False, "meta": {"message": "Не настроены учетные данные для API"}}
+
+
 def get_user_api(context):
     try:
         company_id = context.user_data.get("company_id", COMPANY_ID)

@@ -17,6 +17,13 @@
         <input type="hidden" name="user_id" value="{{ user_id }}">
         <p>Нажмите кнопку для активации интеграции с YClients.</p>
         <input type="submit" value="Активировать">
+        <div class="oauth-section">
+            <h3>Активация через OAuth</h3>
+            <p>Для более надежной интеграции рекомендуется использовать OAuth-авторизацию.</p>
+            <a href="{{ url_for('oauth_authorize', salon_id=salon_id) }}" class="btn btn-primary">
+                Активировать через OAuth
+            </a>
+        </div>
     </form>
 </body>
 </html>
