@@ -1,4 +1,4 @@
-from flask import Flask, request, render_template, redirect, url_for, session, jsonify
+from flask import Flask, request, render_template, redirect, url_for, session, jsonify, flash
 import config
 import utils
 import yc as yclients
@@ -6,6 +6,7 @@ import json
 import bcrypt
 from flask_wtf.csrf import CSRFProtect
 from flask_migrate import Migrate
+from flask_mail import Mail, Message
 import logging
 from logging.handlers import RotatingFileHandler
 import os
@@ -15,6 +16,7 @@ from models import db, User, Salon, Role, UserRole, UserPhone, WebhookEvent, Act
 app = Flask(__name__)
 app.config.from_object('config.Config')
 app.secret_key = app.config['SECRET_KEY']
+mail = Mail(app)
 
 # Инициализация базы данных с приложением
 db.init_app(app)
@@ -327,72 +329,6 @@ def debug_params():
     return jsonify(params)
 
 
-@app.route('/oauth/authorize')
-def oauth_authorize():
-    """Перенаправляет пользователя на страницу авторизации YClients"""
-    salon_id = request.args.get('salon_id')
-    if not salon_id:
-        return "Отсутствует идентификатор салона", 400
-
-    # Сохраняем salon_id в сессии для последующего использования
-    session['oauth_salon_id'] = salon_id
-
-    # Формируем URL для OAuth-авторизации
-    client_id = app.config['YCLIENTS_CLIENT_ID']
-    redirect_uri = url_for('oauth_callback', _external=True)
-    # Генерируем случайное состояние для защиты от CSRF
-    state = os.urandom(16).hex()
-    session['oauth_state'] = state
-
-    oauth_url = get_oauth_url(client_id, redirect_uri, state)
-    return redirect(oauth_url)
-
-
-@app.route('/oauth/callback')
-def oauth_callback():
-    """Обрабатывает callback от YClients после авторизации"""
-    # Проверяем state для защиты от CSRF
-    state = request.args.get('state')
-    if state != session.get('oauth_state'):
-        return "Недействительный state параметр", 400
-
-    # Получаем код авторизации
-    code = request.args.get('code')
-    if not code:
-        return "Отсутствует код авторизации", 400
-
-    # Получаем salon_id из сессии
-    salon_id = session.get('oauth_salon_id')
-    if not salon_id:
-        return "Отсутствует идентификатор салона в сессии", 400
-
-    # Обмениваем код на токены
-    client_id = app.config['YCLIENTS_CLIENT_ID']
-    client_secret = app.config['YCLIENTS_CLIENT_SECRET']
-    redirect_uri = url_for('oauth_callback', _external=True)
-
-    token_data = exchange_code_for_token(
-        client_id, client_secret, code, redirect_uri)
-    if not token_data:
-        return "Не удалось получить токены доступа", 400
-
-    # Сохраняем токены в базе данных
-    if save_oauth_token(salon_id, token_data):
-        # Очищаем данные OAuth из сессии
-        session.pop('oauth_salon_id', None)
-        session.pop('oauth_state', None)
-
-        # Активируем интеграцию для салона
-        salon = Salon.query.filter_by(salon_id=salon_id).first()
-        if salon:
-            salon.integration_active = True
-            db.session.commit()
-
-        return redirect(url_for('profile', message="Интеграция успешно активирована"))
-    else:
-        return "Не удалось сохранить токены доступа", 500
-
-
 @app.route('/signup', methods=['GET', 'POST'])
 @csrf.exempt
 def signup():
@@ -403,6 +339,7 @@ def signup():
     user_data = request.args.get('user_data')
     user_data_sign = request.args.get('user_data_sign')
     salon_ids = request.args.getlist('salon_ids[]')
+    user_email_for_activation = None
 
     # Обработка ситуации, когда salon_id отсутствует
     if not salon_id and not salon_ids:
@@ -427,9 +364,12 @@ def signup():
                 if decoded_user_data:
                     email = decoded_user_data.get('email')
                     if email:
+                        user_email_for_activation = email
                         user = User.query.filter_by(email=email).first()
+                        temp_password = None
                         if not user:
                             # Создаем нового пользователя
+                            temp_password = os.urandom(8).hex()
                             new_user = User(
                                 name=decoded_user_data.get('name', ''),
                                 email=email,
@@ -438,9 +378,6 @@ def signup():
                                 created_at=datetime.utcnow(),
                                 updated_at=datetime.utcnow()
                             )
-
-                            # Генерируем случайный пароль
-                            temp_password = os.urandom(8).hex()
                             new_user.set_password(temp_password)
                             db.session.add(new_user)
                             db.session.commit()
@@ -449,20 +386,20 @@ def signup():
                             # Логируем создание пользователя
                             log_activity(user_id, "user_created", "user", user_id,
                                          {"email": email, "name": new_user.name})
+                            send_credentials_email(email, temp_password)
                         else:
                             user_id = user.id
                             # Проверяем, активен ли пользователь
                             if not user.is_active:
                                 user.is_active = True
                                 db.session.commit()
-                                # Логируем активацию пользователя
                                 log_activity(user_id, "user_activated", "user", user_id,
                                              {"email": email})
 
                         # Перенаправляем на активацию
                         app.logger.info(
-                            f"Перенаправление на activate с salon_id={salon_id}, user_id={user_id}")
-                        return redirect(url_for('activate', salon_id=salon_id, user_id=user_id))
+                            f"Перенаправление на activate с salon_id={salon_id}, user_id={user_id}, email={user_email_for_activation}")
+                        return redirect(url_for('activate', salon_id=salon_id, user_id=user_id, email=user_email_for_activation))
             else:
                 app.logger.warning("Недействительная подпись данных")
                 decoded_user_data = None
@@ -676,6 +613,7 @@ def profile():
 @app.route('/activate', methods=['GET', 'POST'])
 @csrf.exempt
 def activate():
+    email_from_signup = request.args.get('email') or request.form.get('email')
     if request.method == 'POST':
         salon_id = request.form.get('salon_id')
         user_id = request.form.get('user_id')
@@ -684,7 +622,7 @@ def activate():
         if not salon_id or not user_id:
             app.logger.error(
                 f"Пустые значения: salon_id={salon_id}, user_id={user_id}")
-            return render_template('activate.html', error_message="Отсутствуют обязательные параметры")
+            return render_template('activate.html', error_message="Отсутствует информация о салоне иои админастраторе салона")
 
         # Убедитесь, что значения являются целыми числами
         try:
@@ -695,6 +633,16 @@ def activate():
                 f"Некорректные значения: salon_id={salon_id}, user_id={user_id}")
             return render_template('activate.html', error_message="Некорректные параметры")
 
+        if not email_from_signup:
+            app.logger.error(
+                "Отсутствует email пользователя при активации (POST)")
+            # Пытаемся получить email из БД, если user_id есть
+            user = User.query.get(user_id)
+            if user:
+                email_from_signup = user.email
+            else:
+                return render_template('activate.html', error_message="Ошибка: Email пользователя не найден.")
+
         api_key = app.config['PARTNER_TOKEN']
         application_id = app.config['APPLICATION_ID']
         base_url = request.host_url.rstrip('/')
@@ -704,19 +652,23 @@ def activate():
         app.logger.info(
             f"Configuring webhooks: {webhook_urls} and callback: {callback_url}")
 
-        success, result_message = activate_salon_integration(
+        status, message, result_user_id = activate_salon_integration(
             salon_id=salon_id,
             user_id=user_id,
+            email=email_from_signup,  # Передаем email
             api_key=api_key,
             application_id=application_id,
             webhook_urls=webhook_urls,
             callback_url=callback_url
         )
 
-        if success:
-            return render_template('activate.html', message="Интеграция успешно активирована.")
-        else:
-            return render_template('activate.html', error_message=result_message)
+        if status == 'error':
+            return render_template('activate.html', error_message=message, salon_id=salon_id, user_id=user_id, email=email_from_signup)
+        elif status == 'newly_activated':
+            # В message уже отформатированное сообщение с email
+            return render_template('activate.html', success_message=message, show_profile_button=True, user_id=result_user_id)
+        elif status == 'already_active':
+            return render_template('activate.html', already_active_message=message, show_profile_button=True, user_id=result_user_id)
     else:
         salon_id = request.args.get('salon_id')
         user_id = request.args.get('user_id')
@@ -726,148 +678,30 @@ def activate():
             app.logger.error(
                 f"Пустые значения при GET-запросе: salon_id={salon_id}, user_id={user_id}")
             return render_template('activate.html', error_message="Отсутствуют обязательные параметры")
+        if not email_from_signup:
+            app.logger.warning(
+                "Отсутствует email пользователя при активации (GET)")
 
         app.logger.info(
-            f"GET: Отображение страницы активации с salon_id={salon_id}, user_id={user_id}")
-        return render_template('activate.html', salon_id=salon_id, user_id=user_id)
+            f"GET: Отображение страницы активации с salon_id={salon_id}, user_id={user_id}, email={email_from_signup}")
+        return render_template('activate.html', salon_id=salon_id, user_id=user_id, email=email_from_signup)
 
 
-def activate_salon_integration(salon_id, user_id, api_key, application_id, webhook_urls, callback_url):
-    """Активирует интеграцию для конкретного салона."""
+def activate_salon_integration(salon_id, user_id, email, api_key, application_id, webhook_urls, callback_url):
+    """Активирует интеграцию и возвращает статус."""
     try:
-        # Проверка типов данных
-        if not salon_id or not user_id:
-            app.logger.error(
-                f"Пустые значения в activate_salon_integration: salon_id={salon_id}, user_id={user_id}")
-            return False, "Отсутствуют обязательные параметры"
-
-        # Убедитесь, что значения являются целыми числами
-        salon_id = int(salon_id) if not isinstance(salon_id, int) else salon_id
-        user_id = int(user_id) if not isinstance(user_id, int) else user_id
-
-        # Получаем салон из базы данных или создаем новый
         salon = Salon.query.filter_by(salon_id=salon_id).first()
         if not salon:
-            salon = Salon(salon_id=salon_id, is_active=True)
+            salon = Salon(salon_id=salon_id, is_active=False,
+                          integration_active=False)
             db.session.add(salon)
             db.session.commit()
-
-        # Логирование действия
-        log_activity(user_id, "activate_integration", "salon", salon.id,
-                     {"salon_id": salon_id, "application_id": application_id})
-
-        # Проверяем наличие связи пользователя и салона
-        user_role = UserRole.query.filter_by(
-            user_id=user_id,
-            salon_id=salon.id
-        ).first()
-
-        admin_role = Role.query.filter_by(name='admin').first()
-        if not admin_role:
-            admin_role = Role(name='admin', description='Администратор салона')
-            db.session.add(admin_role)
-            db.session.commit()
-
-        if user_role:
-            # Если связь уже существует, активируем ее
-            if not user_role.is_active:
-                user_role.is_active = True
-                old_value = "неактивна"
-                new_value = "активна"
-                record_change(user_id, "user_role", user_role.id,
-                              "is_active", old_value, new_value)
-                db.session.commit()
-
-            # Отправляем настройки интеграции
-            success, message = yclients.send_integration_settings(
-                salon_id, application_id, api_key, webhook_urls, callback_url)
-
-            if success:
-                app.logger.info(
-                    f"Integration settings successfully sent for salon {salon_id}")
-                # Активируем салон, если он был неактивен
-                if not salon.is_active:
-                    salon.is_active = True
-                    salon.integration_active = True
-                    db.session.commit()
-                return True, "Интеграция успешно активирована."
-            else:
-                app.logger.error(
-                    f"Error sending integration settings for salon {salon_id}: {message}")
-                return False, f"Ошибка отправки настроек: {message}"
-
-        # Если связи нет, создаем новую
-        success, user_yclients_id, response = yclients.activate_integration(
-            salon_id=salon_id,
-            api_key=api_key,
-            webhook_urls=webhook_urls,
-            application_id=application_id,
-            callback_url=callback_url
-        )
-
-        # Проверяем ответ на наличие сообщения о том, что приложение уже установлено
-        if isinstance(response, dict) and response.get("meta", {}).get("message") == "Приложение уже установлено":
-            app.logger.info(
-                f"Application already installed for salon {salon_id}")
-
-            # Создаем связь пользователя и салона с ролью администратора
-            new_user_role = UserRole(
-                user_id=user_id,
-                salon_id=salon.id,
-                role_id=admin_role.id,
-                is_active=True
-            )
-            db.session.add(new_user_role)
-            db.session.commit()
-
-            # Обновляем настройки интеграции
-            success, message = yclients.send_integration_settings(
-                salon_id, application_id, api_key, webhook_urls, callback_url)
-
-            salon.integration_active = True
-            db.session.commit()
-
-            return True, "Интеграция уже установлена и была активирована в системе."
-
-        if success:
-            app.logger.info(
-                f"Integration successfully activated for salon {salon_id}, USER_ID: {user_yclients_id}")
-
-            # Создаем связь пользователя и салона с ролью администратора
-            new_user_role = UserRole(
-                user_id=user_id,
-                salon_id=salon.id,
-                role_id=admin_role.id,
-                is_active=True
-            )
-            db.session.add(new_user_role)
-
-            # Активируем салон
-            salon.is_active = True
-            salon.integration_active = True
-            db.session.commit()
-
-            # Отправляем настройки интеграции
-            success, message = yclients.send_integration_settings(
-                salon_id, application_id, api_key, webhook_urls, callback_url)
-
-            if success:
-                app.logger.info(
-                    f"Integration settings successfully sent for salon {salon_id}")
-                return True, "Интеграция успешно активирована."
-            else:
-                app.logger.error(
-                    f"Error sending integration settings for salon {salon_id}: {message}")
-                return False, f"Ошибка отправки настроек: {message}"
         else:
-            # Обработка строки вместо словаря
-            if isinstance(response, str):
-                # Проверяем, содержит ли строка ответа информацию о том, что приложение уже установлено
-                if "Пользователь уже установил это приложение" in response:
-                    app.logger.info(
-                        f"Application already installed for salon {salon_id} (from error message)")
-
-                    # Создаем связь пользователя и салона с ролью администратора
+            if salon.integration_active:
+                admin_role = Role.query.filter_by(name='admin').first()
+                user_role = UserRole.query.filter_by(
+                    user_id=user_id, salon_id=salon.id, role_id=admin_role.id).first()
+                if not user_role:
                     new_user_role = UserRole(
                         user_id=user_id,
                         salon_id=salon.id,
@@ -875,30 +709,103 @@ def activate_salon_integration(salon_id, user_id, api_key, application_id, webho
                         is_active=True
                     )
                     db.session.add(new_user_role)
-
-                    # Активируем салон
-                    salon.is_active = True
-                    salon.integration_active = True
                     db.session.commit()
+                    log_activity(
+                        user_id, "added_admin_role_on_reactivation", "salon", salon.id)
+                elif not user_role.is_active:
+                    user_role.is_active = True
+                    db.session.commit()
+                    log_activity(user_id, "reactivated_admin_role",
+                                 "salon", salon.id)
 
-                    return True, "Интеграция уже установлена и была активирована в системе."
+                app.logger.info(
+                    f"Интеграция для салона {salon_id} уже была активна.")
+                # Можно на всякий случай переотправить настройки
+                yclients.send_integration_settings(
+                    salon_id, application_id, api_key, webhook_urls, callback_url)
+                return 'already_active', "Интеграция уже была активирована ранее для этого салона.", user_id
 
-                error_message = response  # Если response — строка (ошибка)
+        # Логирование действия
+        log_activity(user_id, "activate_integration", "salon", salon.id,
+                     {"salon_id": salon_id, "application_id": application_id})
+
+        # Проверяем наличие связи пользователя и салона
+        salon = Salon.query.filter_by(salon_id=salon_id).first()
+        user_role = UserRole.query.filter_by(
+            user_id=user_id,
+            salon_id=salon.id,
+            role_id=admin_role.id
+        ).first()
+
+        # Активация через YClients API
+        success, user_yclients_id_or_msg, response = yclients.activate_integration(
+            salon_id=salon_id,
+            api_key=api_key,
+            webhook_urls=webhook_urls,
+            application_id=application_id,
+            callback_url=callback_url
+        )
+
+        is_already_installed = False
+        if isinstance(response, dict) and response.get("meta", {}).get("message") == "Приложение уже установлено":
+            is_already_installed = True
+            success = True  # Считаем успехом, если уже установлено
+            app.logger.info(
+                f"YClients: Приложение уже установлено для салона {salon_id}")
+        elif isinstance(response, str) and "Пользователь уже установил это приложение" in response:
+            is_already_installed = True
+            success = True
+            app.logger.info(
+                f"YClients: Приложение уже установлено для салона {salon_id} (из строки ошибки)")
+
+        if success:
+            # Создаем или активируем связь UserRole
+            if not user_role:
+                user_role = UserRole(
+                    user_id=user_id,
+                    salon_id=salon.id,
+                    role_id=admin_role.id,
+                    is_active=True
+                )
+                db.session.add(user_role)
+                log_activity(user_id, "created_admin_role", "salon", salon.id)
+            elif not user_role.is_active:
+                user_role.is_active = True
+                log_activity(user_id, "reactivated_admin_role",
+                             "salon", salon.id)
+
+            # Обновляем статус салона
+            salon.is_active = True
+            salon.integration_active = True
+            db.session.commit()  # Сохраняем изменения салона и роли
+
+            # Отправляем настройки интеграции (важно после установки integration_active=True)
+            settings_success, settings_message = yclients.send_integration_settings(
+                salon_id, application_id, api_key, webhook_urls, callback_url
+            )
+
+            if settings_success:
+                app.logger.info(
+                    f"Настройки интеграции успешно отправлены для салона {salon_id}")
+                return 'newly_activated', f"Интеграция успешно активирована. Данные для входа отправлены на ваш почтовый адрес: {email}", user_id
             else:
-                error_message = response.get("meta", {}).get(
-                    "message", "Неизвестная ошибка")
-
+                app.logger.error(
+                    f"Ошибка отправки настроек интеграции для салона {salon_id}: {settings_message}")
+                # Откатывать ли salon.integration_active? Возможно, нет, т.к. сама интеграция активна.
+                return 'error', f"Интеграция активирована, но произошла ошибка отправки настроек: {settings_message}", user_id
+        else:
+            # Обработка ошибки активации от Yclients
+            error_message = response if isinstance(response, str) else response.get(
+                "meta", {}).get("message", "Неизвестная ошибка API Yclients")
             app.logger.error(
-                f"Error activating integration for salon {salon_id}: {error_message}")
-            return False, error_message
+                f"Ошибка активации интеграции для салона {salon_id}: {error_message}")
+            return 'error', f"Ошибка активации интеграции: {error_message}", user_id
 
     except Exception as e:
+        db.session.rollback()  # Откат транзакции БД при любой ошибке
         app.logger.error(
-            f"Exception during activation for salon {salon_id}: {str(e)}")
-        # Добавляем логирование полного ответа при ошибке
-        if hasattr(e, 'response') and e.response is not None:
-            app.logger.error(f"Response content: {e.response.text}")
-        return False, f"Исключение: {str(e)}"
+            f"Исключение при активации для салона {salon_id}: {str(e)}", exc_info=True)
+        return 'error', f"Внутренняя ошибка сервера при активации: {str(e)}", None
 
 
 @app.route('/get_bot_link', methods=['POST'])
@@ -1088,6 +995,23 @@ def activity_logs():
                            action=action,
                            date_from=date_from,
                            date_to=date_to)
+
+
+@app.route('/auto_login/<int:user_id>')
+def auto_login(user_id):
+    user = User.query.get(user_id)
+    if user and user.is_active:
+        session['user_id'] = user.id
+        log_activity(user_id, "auto_login_success", "user", user_id)
+        # Опциональное сообщение
+        flash("Вы успешно вошли в систему.", "success")
+        return redirect(url_for('profile'))
+    else:
+        log_activity(user_id, "auto_login_failed", "user", user_id, {
+                     "reason": "User not found or inactive"})
+        flash("Не удалось выполнить автоматический вход.", "error")
+        # Перенаправить на обычную страницу входа
+        return redirect(url_for('login'))
 
 
 @app.route('/db-test')

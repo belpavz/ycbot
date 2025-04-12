@@ -1,29 +1,73 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Активация интеграции</title>
-    <meta charset="UTF-8">
+    <title>Активация Интеграции YClients</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-    <h1>Активация интеграции</h1>
-    {% if message %}
-    <p style="color: green;">{{ message }}</p>
-    {% elif error_message %}
-    <p style="color: red;">{{ error_message }}</p>
-    {% endif %}
-    <form method="POST" action="/activate">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="hidden" name="salon_id" value="{{ salon_id }}">
-        <input type="hidden" name="user_id" value="{{ user_id }}">
-        <p>Нажмите кнопку для активации интеграции с YClients.</p>
-        <input type="submit" value="Активировать">
-        <div class="oauth-section">
-            <h3>Активация через OAuth</h3>
-            <p>Для более надежной интеграции рекомендуется использовать OAuth-авторизацию.</p>
-            <a href="{{ url_for('oauth_authorize', salon_id=salon_id) }}" class="btn btn-primary">
-                Активировать через OAuth
-            </a>
+    <h1>Активация Интеграции с YClients</h1>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <ul class=flashes>
+        {% for category, message in messages %}
+          <li class="{{ category }}">{{ message }}</li>
+        {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+
+    {% if success_message %}
+        <div class="alert alert-success">
+            <p>{{ success_message }}</p>
+            {% if show_profile_button and user_id %}
+            <p>
+                <a href="{{ url_for('auto_login', user_id=user_id) }}" class="button">Перейти в личный кабинет</a>
+            </p>
+            {% endif %}
         </div>
-    </form>
+    {% elif already_active_message %}
+        <div class="alert alert-info">
+            <p>{{ already_active_message }}</p>
+             {% if show_profile_button and user_id %}
+            <p>
+                <a href="{{ url_for('auto_login', user_id=user_id) }}" class="button">Перейти в личный кабинет</a>
+            </p>
+            {% endif %}
+        </div>
+    {% elif error_message %}
+         <div class="alert alert-danger">
+            <p>Ошибка: {{ error_message }}</p>
+            <!-- Можно добавить кнопку "Попробовать снова", которая вернет на signup или покажет форму ниже -->
+         </div>
+         <!-- Показываем форму снова при ошибке, чтобы можно было повторить -->
+         {% if salon_id and user_id %}
+         <form method="post">
+             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+             <input type="hidden" name="salon_id" value="{{ salon_id }}">
+             <input type="hidden" name="user_id" value="{{ user_id }}">
+             <input type="hidden" name="email" value="{{ email }}"> <!-- Передаем email -->
+             <p>Нажмите кнопку для активации интеграции с YClients.</p>
+             <button type="submit">Активировать</button>
+         </form>
+         {% endif %}
+    {% else %}
+        <!-- Показываем форму только если нет сообщений об успехе/ошибке -->
+        {% if salon_id and user_id %}
+        <form method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+            <input type="hidden" name="salon_id" value="{{ salon_id }}">
+            <input type="hidden" name="user_id" value="{{ user_id }}">
+            <input type="hidden" name="email" value="{{ email }}"> <!-- Передаем email -->
+            <p>Нажмите кнопку для активации интеграции с YClients.</p>
+            <button type="submit">Активировать</button>
+        </form>
+        {% else %}
+         <div class="alert alert-warning">
+            <p>Недостаточно данных для активации. Пожалуйста, начните процесс сначала из Yclients Marketplace.</p>
+         </div>
+        {% endif %}
+    {% endif %}
+
 </body>
 </html>
