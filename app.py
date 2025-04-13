@@ -723,56 +723,84 @@ def activate():
 
 
 def activate_salon_integration(salon_id, user_id, email, api_key, application_id, webhook_urls, callback_url):
-    """Активирует интеграцию и возвращает статус."""
+    """ Активирует интеграцию салона с YClients, связывает пользователя с салоном
+    и возвращает статус операции. """
     try:
+        # 1. Найти или создать салон в нашей БД по YClients salon_id
         salon = Salon.query.filter_by(salon_id=salon_id).first()
         if not salon:
+            # Если салон не найден, создаем новую запись
             salon = Salon(salon_id=salon_id, is_active=False,
                           integration_active=False)
             db.session.add(salon)
+            # Commit нужен здесь, чтобы получить salon.id для дальнейшего использования
             db.session.commit()
+            app.logger.info(
+                f"Создан новый салон в БД с ID={salon.id} для YClients salon_id={salon_id}")
         else:
-            admin_role = Role.query.filter_by(name='admin').first()
-            if salon.integration_active:
-                user_role = UserRole.query.filter_by(
-                    user_id=user_id, salon_id=salon.id, role_id=admin_role.id).first()
-                if not user_role:
-                    new_user_role = UserRole(
-                        user_id=user_id,
-                        salon_id=salon.id,
-                        role_id=admin_role.id,
-                        is_active=True
-                    )
-                    db.session.add(new_user_role)
-                    db.session.commit()
-                    log_activity(
-                        user_id, "added_admin_role_on_reactivation", "salon", salon.id)
-                elif not user_role.is_active:
-                    user_role.is_active = True
-                    db.session.commit()
-                    log_activity(user_id, "reactivated_admin_role",
-                                 "salon", salon.id)
+            app.logger.info(
+                f"Найден существующий салон в БД с ID={salon.id} для YClients salon_id={salon_id}")
 
+        # 2. Получить роль 'admin'
+        admin_role = Role.query.filter_by(name='admin').first()
+        if not admin_role:
+            app.logger.error(
+                "Критическая ошибка конфигурации: Роль 'admin' не найдена в базе данных!")
+            # Возвращаем ошибку, так как это проблема настройки сервера.
+            return 'error', "Ошибка конфигурации сервера: Роль 'admin' отсутствует.", None
+
+        # 3. Проверить, была ли интеграция уже активна для этого салона
+        if salon.integration_active:
+            app.logger.info(
+                f"Интеграция для салона {salon_id} (ID: {salon.id}) уже была активна.")
+
+            # Проверяем/создаем/активируем связь пользователя с ролью администратора для этого салона
+            user_role = UserRole.query.filter_by(
+                user_id=user_id, salon_id=salon.id, role_id=admin_role.id).first()
+
+            if not user_role:
+                # Если связи не было (например, другой админ активировал ранее), создаем ее
+                new_user_role = UserRole(
+                    user_id=user_id,
+                    salon_id=salon.id,
+                    role_id=admin_role.id,
+                    is_active=True
+                )
+                db.session.add(new_user_role)
+                log_activity(user_id, "added_admin_role_on_reactivation", "salon", salon.id,
+                             {"salon_id": salon_id})
                 app.logger.info(
-                    f"Интеграция для салона {salon_id} уже была активна.")
-                # Можно на всякий случай переотправить настройки
-                yclients.send_integration_settings(
-                    salon_id, application_id, api_key, webhook_urls, callback_url)
-                return 'already_active', "Интеграция уже была активирована ранее для этого салона.", user_id
+                    f"Добавлена роль 'admin' пользователю {user_id} для уже активного салона {salon.id}")
+            elif not user_role.is_active:
+                # Если связь была, но неактивна, активируем
+                user_role.is_active = True
+                log_activity(user_id, "reactivated_admin_role", "salon", salon.id,
+                             {"salon_id": salon_id})
+                app.logger.info(
+                    f"Реактивирована роль 'admin' пользователю {user_id} для салона {salon.id}")
 
-        # Логирование действия
-        log_activity(user_id, "activate_integration", "salon", salon.id,
+            db.session.commit()  # Сохраняем изменения UserRole, если они были
+
+            # Можно на всякий случай переотправить настройки в YClients
+            try:
+                yclients.send_integration_settings(
+                    salon_id, application_id, api_key, webhook_urls, callback_url
+                )
+                app.logger.info(
+                    f"Настройки интеграции переотправлены для уже активного салона {salon_id}")
+            except Exception as settings_err:
+                app.logger.warning(
+                    f"Не удалось переотправить настройки для уже активного салона {salon_id}: {settings_err}")
+
+            return 'already_active', "Интеграция уже была активирована ранее для этого салона.", user_id
+
+        # --- 4. Логика НОВОЙ активации (если salon.integration_active был False) ---
+        app.logger.info(
+            f"Начало процесса НОВОЙ активации интеграции для салона {salon_id} (ID: {salon.id}) пользователем {user_id}")
+        log_activity(user_id, "start_new_activation", "salon", salon.id,
                      {"salon_id": salon_id, "application_id": application_id})
 
-        # Проверяем наличие связи пользователя и салона
-        salon = Salon.query.filter_by(salon_id=salon_id).first()
-        user_role = UserRole.query.filter_by(
-            user_id=user_id,
-            salon_id=salon.id,
-            role_id=admin_role.id
-        ).first()
-
-        # Активация через YClients API
+        # 5. Вызов API YClients для активации интеграции
         success, user_yclients_id_or_msg, response = yclients.activate_integration(
             salon_id=salon_id,
             api_key=api_key,
@@ -781,20 +809,27 @@ def activate_salon_integration(salon_id, user_id, email, api_key, application_id
             callback_url=callback_url
         )
 
+        # Обработка ответа, если YClients говорит, что приложение уже установлено
         is_already_installed = False
-        if isinstance(response, dict) and response.get("meta", {}).get("message") == "Приложение уже установлено":
+        # Убрана лишняя проверка на dict и str, так как activate_integration теперь возвращает стандартизированный ответ
+        if success and response and isinstance(response, dict) and response.get("meta", {}).get("message") == "Приложение уже установлено":
             is_already_installed = True
-            success = True  # Считаем успехом, если уже установлено
             app.logger.info(
-                f"YClients: Приложение уже установлено для салона {salon_id}")
-        elif isinstance(response, str) and "Пользователь уже установил это приложение" in response:
-            is_already_installed = True
-            success = True
-            app.logger.info(
-                f"YClients: Приложение уже установлено для салона {salon_id} (из строки ошибки)")
+                f"YClients API сообщил, что приложение уже было установлено для салона {salon_id}")
+            # Считаем это успехом, так как наша цель - активная интеграция
 
+        # 6. Обработка результата вызова API YClients
         if success:
+            app.logger.info(
+                f"API YClients успешно активировал интеграцию (или она уже была активна) для салона {salon_id}")
+
             # Создаем или активируем связь UserRole
+            user_role = UserRole.query.filter_by(
+                user_id=user_id,
+                salon_id=salon.id,
+                role_id=admin_role.id
+            ).first()
+
             if not user_role:
                 user_role = UserRole(
                     user_id=user_id,
@@ -803,18 +838,27 @@ def activate_salon_integration(salon_id, user_id, email, api_key, application_id
                     is_active=True
                 )
                 db.session.add(user_role)
-                log_activity(user_id, "created_admin_role", "salon", salon.id)
+                log_activity(user_id, "created_admin_role_on_activation", "salon", salon.id,
+                             {"salon_id": salon_id})
+                app.logger.info(
+                    f"Создана связь UserRole 'admin' для пользователя {user_id} и салона {salon.id}")
             elif not user_role.is_active:
                 user_role.is_active = True
-                log_activity(user_id, "reactivated_admin_role",
-                             "salon", salon.id)
+                log_activity(user_id, "reactivated_admin_role_on_activation", "salon", salon.id,
+                             {"salon_id": salon_id})
+                app.logger.info(
+                    f"Реактивирована связь UserRole 'admin' для пользователя {user_id} и салона {salon.id}")
 
-            # Обновляем статус салона
-            salon.is_active = True
-            salon.integration_active = True
-            db.session.commit()  # Сохраняем изменения салона и роли
+            # Обновляем статус салона в нашей БД
+            salon.is_active = True          # Сам салон теперь активен в нашей системе
+            salon.integration_active = True  # Интеграция с YClients активна
+            db.session.commit()
+            app.logger.info(
+                f"Статус салона ID={salon.id} обновлен: is_active=True, integration_active=True")
 
-            # Отправляем настройки интеграции (важно после установки integration_active=True)
+            # 7. Отправляем настройки (вебхуки) в YClients ПОСЛЕ успешной активации и коммита
+            app.logger.info(
+                f"Отправка настроек интеграции в YClients для салона {salon_id}")
             settings_success, settings_message = yclients.send_integration_settings(
                 salon_id, application_id, api_key, webhook_urls, callback_url
             )
@@ -822,24 +866,29 @@ def activate_salon_integration(salon_id, user_id, email, api_key, application_id
             if settings_success:
                 app.logger.info(
                     f"Настройки интеграции успешно отправлены для салона {salon_id}")
+                # Интеграция полностью успешно активирована
                 return 'newly_activated', f"Интеграция успешно активирована. Данные для входа отправлены на ваш почтовый адрес: {email}", user_id
             else:
                 app.logger.error(
                     f"Ошибка отправки настроек интеграции для салона {salon_id}: {settings_message}")
-                # Откатывать ли salon.integration_active? Возможно, нет, т.к. сама интеграция активна.
                 return 'error', f"Интеграция активирована, но произошла ошибка отправки настроек: {settings_message}", user_id
         else:
-            # Обработка ошибки активации от Yclients
-            error_message = response if isinstance(response, str) else response.get(
-                "meta", {}).get("message", "Неизвестная ошибка API Yclients")
+            # Ошибка при вызове API YClients activate_integration
+            # (success был False)
+            # Теперь activate_integration возвращает сообщение об ошибке здесь
+            error_message = user_yclients_id_or_msg
             app.logger.error(
-                f"Ошибка активации интеграции для салона {salon_id}: {error_message}")
-            return 'error', f"Ошибка активации интеграции: {error_message}", user_id
+                f"Ошибка API YClients при активации интеграции для салона {salon_id}: {error_message}")
+            # Откатывать ли создание салона, если он был новым? Нет, пусть остается неактивным.
+            # Возвращаем ошибку
+            return 'error', f"Ошибка активации интеграции в YClients: {error_message}", user_id
 
     except Exception as e:
-        db.session.rollback()  # Откат транзакции БД при любой ошибке
+        # Откат транзакции БД при любом неожиданном исключении
+        db.session.rollback()
         app.logger.error(
-            f"Исключение при активации для салона {salon_id}: {str(e)}", exc_info=True)
+            f"Неожиданное исключение при активации для салона {salon_id}: {str(e)}", exc_info=True)
+        # Возвращаем общую ошибку сервера
         return 'error', f"Внутренняя ошибка сервера при активации: {str(e)}", None
 
 
