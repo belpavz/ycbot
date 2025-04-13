@@ -1,6 +1,6 @@
 import logging
 from dotenv import load_dotenv
-from models import db, UserPhone
+from models import db, User
 import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, constants
 from telegram.ext import (
@@ -40,69 +40,6 @@ if not all([YCLIENTS_API_TOKEN, COMPANY_ID, FORM_ID, TELEGRAM_BOT_TOKEN]):
 # Создаем функцию для получения API для конкретного пользователя
 
 
-class YClientsAPI:
-    def __init__(self, token=None, company_id=None, form_id=None, client_id=None, client_secret=None):
-        self.token = token  # Партнерский токен (для обратной совместимости)
-        self.company_id = company_id
-        self.form_id = form_id
-        self.client_id = client_id
-        self.client_secret = client_secret
-        self.base_url = "https://api.yclients.com/api/v1"
-
-    def _make_request(self, endpoint, method="GET", data=None, params=None):
-        """Выполняет запрос к API YClients"""
-        url = f"{self.base_url}/{endpoint}"
-
-        # Сначала пробуем использовать OAuth
-        if self.company_id and self.client_id and self.client_secret:
-            access_token = get_valid_oauth_token(
-                self.company_id, self.client_id, self.client_secret)
-            if access_token:
-                headers = {
-                    "Authorization": f"Bearer {access_token}",
-                    "Content-Type": "application/json",
-                    "Accept": "application/vnd.yclients.v2+json"
-                }
-
-                try:
-                    if method.upper() == "GET":
-                        response = requests.get(
-                            url, headers=headers, params=params)
-                    elif method.upper() == "POST":
-                        response = requests.post(
-                            url, headers=headers, json=data)
-                    else:
-                        return {"success": False, "meta": {"message": "Неподдерживаемый метод HTTP"}}
-
-                    return response.json()
-                except Exception as e:
-                    logger.error(f"Ошибка при выполнении запроса с OAuth: {e}")
-
-        # Если OAuth не сработал или не настроен, используем партнерский токен
-        if self.token:
-            headers = {
-                "Authorization": f"Bearer {self.token}",
-                "Content-Type": "application/json",
-                "Accept": "application/vnd.yclients.v2+json"
-            }
-
-            try:
-                if method.upper() == "GET":
-                    response = requests.get(
-                        url, headers=headers, params=params)
-                elif method.upper() == "POST":
-                    response = requests.post(url, headers=headers, json=data)
-                else:
-                    return {"success": False, "meta": {"message": "Неподдерживаемый метод HTTP"}}
-
-                return response.json()
-            except Exception as e:
-                logger.error(
-                    f"Ошибка при выполнении запроса с партнерским токеном: {e}")
-
-        return {"success": False, "meta": {"message": "Не настроены учетные данные для API"}}
-
-
 def get_user_api(context):
     try:
         company_id = context.user_data.get("company_id", COMPANY_ID)
@@ -119,10 +56,10 @@ def get_user_api(context):
 
 # Проверка интеграции для салона.
 def is_integration_active(user_id, company_id):
-    from models import UsersYclients, db
+    from models import Salon, db
 
     # Проверяем, есть ли активная интеграция для данного салона
-    salon_integration = UsersYclients.query.filter_by(
+    salon_integration = Salon.query.filter_by(
         salon_id=company_id,
         is_active=True
     ).first()
@@ -132,7 +69,7 @@ def is_integration_active(user_id, company_id):
         return True
     else:
         # Проверяем, является ли пользователь администратором с отключенной интеграцией
-        admin_entry = UsersYclients.query.filter_by(
+        admin_entry = Salon.query.filter_by(
             user_id=user_id,
             salon_id=company_id,
             is_active=False
@@ -143,7 +80,7 @@ def is_integration_active(user_id, company_id):
             return False
         else:
             # Проверяем, есть ли вообще интеграция для этого салона
-            any_integration = UsersYclients.query.filter_by(
+            any_integration = Salon.query.filter_by(
                 salon_id=company_id
             ).first()
 
@@ -152,18 +89,18 @@ def is_integration_active(user_id, company_id):
 
 # Загрузка и сохранение базы данных телефонов
 def get_user_phone(telegram_id):
-    user_phone = UserPhone.query.filter_by(
+    user_phone = User.query.filter_by(
         telegram_id=str(telegram_id)).first()
     return user_phone.phone if user_phone else None
 
 
 def save_user_phone(telegram_id, phone):
-    user_phone = UserPhone.query.filter_by(
+    user_phone = User.query.filter_by(
         telegram_id=str(telegram_id)).first()
     if user_phone:
         user_phone.phone = phone
     else:
-        user_phone = UserPhone(telegram_id=str(telegram_id), phone=phone)
+        user_phone = User(telegram_id=str(telegram_id), phone=phone)
         db.session.add(user_phone)
     db.session.commit()
 

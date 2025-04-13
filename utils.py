@@ -4,7 +4,6 @@ import hashlib
 import hmac
 import json
 from config import Config
-from app import mail
 
 
 def decode_user_data(user_data_encoded, partner_token):

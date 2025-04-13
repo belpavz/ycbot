@@ -51,6 +51,39 @@ if not app.debug:
     app.logger.info('YCBot startup')
 
 
+def send_credentials_email(recipient_email, password):
+    """Отправляет данные для входа пользователю."""
+    try:
+        subject = "Данные для входа в YCBot"
+        # Используйте app.config для sender и url_for
+        sender = app.config['MAIL_DEFAULT_SENDER']
+        # Используем url_for с _external=True для генерации полного URL
+        login_url = url_for('login', _external=True)
+        body = f"""
+        Приветствуем!
+
+        Вы успешно активировали интеграцию YCBot.
+        Данные для входа в ваш личный кабинет:
+
+        Сайт: {login_url}
+        Логин: {recipient_email}
+        Пароль: {password}
+
+        С уважением,
+        Команда YCBot
+        """
+        msg = Message(subject, sender=sender, recipients=[recipient_email])
+        msg.body = body
+        mail.send(msg)
+        app.logger.info(
+            f"Учетные данные успешно отправлены на {recipient_email}")
+        return True
+    except Exception as e:
+        app.logger.error(
+            f"Ошибка отправки email на {recipient_email}: {str(e)}")
+        return False
+
+
 # Функции для работы с базой данных
 def log_activity(user_id, action, entity_type=None, entity_id=None, details=None, ip_address=None):
     """Логирует действие пользователя в системе."""
@@ -327,6 +360,7 @@ with app.app_context():
 def debug_params():
     params = {key: value for key, value in request.args.items()}
     return jsonify(params)
+    pass
 
 
 @app.route('/signup', methods=['GET', 'POST'])
@@ -460,6 +494,7 @@ def signup():
                            user_data=decoded_user_data,
                            salon_ids=salon_ids,
                            user_id=None)
+    pass
 
 
 @app.route('/')
@@ -697,8 +732,8 @@ def activate_salon_integration(salon_id, user_id, email, api_key, application_id
             db.session.add(salon)
             db.session.commit()
         else:
+            admin_role = Role.query.filter_by(name='admin').first()
             if salon.integration_active:
-                admin_role = Role.query.filter_by(name='admin').first()
                 user_role = UserRole.query.filter_by(
                     user_id=user_id, salon_id=salon.id, role_id=admin_role.id).first()
                 if not user_role:
@@ -1036,23 +1071,22 @@ def handle_exception(e):
 
 # Запуск миграции данных при запуске приложения
 # Инициализация приложения
-if __name__ == '__main__':
-    with app.app_context():
-        # Создаем все таблицы, если их нет
-        db.create_all()
-
-        # Запускаем миграцию данных
-        try:
-            migrate_data()
-            app.logger.info("Миграция данных выполнена успешно")
-        except Exception as e:
-            app.logger.error(f"Ошибка при миграции данных: {str(e)}")
-
-    pass
-
-
 # if __name__ == '__main__':
+#    with app.app_context():
+    # Создаем все таблицы, если их нет
+    # db.create_all()
+
+    # Запускаем миграцию данных
+    # try:
+    #    migrate_data()
+    #    app.logger.info("Миграция данных выполнена успешно")
+    # except Exception as e:
+    #    app.logger.error(f"Ошибка при миграции данных: {str(e)}")
+#    pass
+
+
+if __name__ == '__main__':
     # app.run(debug=True)  # Включите debug mode для разработки
     # app.run(debug=True, host="0.0.0.0", port=8000)
     # app.run(host="0.0.0.0", port=8000)
-    # pass
+    pass
