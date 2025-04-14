@@ -10,6 +10,7 @@ from flask_mail import Mail, Message
 import logging
 from logging.handlers import RotatingFileHandler
 import os
+import dkim
 from datetime import datetime, timedelta
 from models import db, User, Salon, Role, UserRole, UserPhone, WebhookEvent, ActivityLog, ChangeHistory, CachedData
 
@@ -54,10 +55,15 @@ if not app.debug:
 def send_credentials_email(recipient_email, password):
     """Отправляет данные для входа пользователю."""
     try:
+        app.logger.info(f"Начинаем отправку email на {recipient_email}")
+        app.logger.info(f"MAIL_SERVER: {app.config['MAIL_SERVER']}")
+        app.logger.info(f"MAIL_PORT: {app.config['MAIL_PORT']}")
+        app.logger.info(f"MAIL_USE_SSL: {app.config['MAIL_USE_SSL']}")
+        app.logger.info(f"MAIL_USE_TLS: {app.config['MAIL_USE_TLS']}")
+        app.logger.info(f"MAIL_USERNAME: {app.config['MAIL_USERNAME']}")
+
         subject = "Данные для входа в YCBot"
-        # Используйте app.config для sender и url_for
         sender = app.config['MAIL_DEFAULT_SENDER']
-        # Используем url_for с _external=True для генерации полного URL
         login_url = url_for('login', _external=True)
         body = f"""
         Приветствуем!
@@ -72,8 +78,35 @@ def send_credentials_email(recipient_email, password):
         С уважением,
         Команда YCBot
         """
+        # Создаем объект сообщения
         msg = Message(subject, sender=sender, recipients=[recipient_email])
         msg.body = body
+
+        # Путь к приватному DKIM-ключу
+        dkim_private_key_path = '/home/belpav/ycbot/ycbot.ru.private'
+
+        # Чтение приватного ключа
+        with open(dkim_private_key_path, 'rb') as key_file:
+            private_key = key_file.read()
+
+        # Получаем домен из адреса отправителя
+        domain = sender.split('@')[1]
+
+        # Создаем DKIM-подпись
+        headers = [b'From', b'To', b'Subject']
+        sig = dkim.sign(
+            message=msg.as_string().encode(),
+            selector=b'mail',
+            domain=domain.encode(),
+            privkey=private_key,
+            include_headers=headers
+        )
+
+        # Добавляем DKIM-Signature в заголовки сообщения
+        dkim_header = sig.decode().replace('\r\n', '')
+        msg.extra_headers = {'DKIM-Signature': dkim_header}
+
+        # Отправляем сообщение
         mail.send(msg)
         app.logger.info(
             f"Учетные данные успешно отправлены на {recipient_email}")
@@ -83,8 +116,9 @@ def send_credentials_email(recipient_email, password):
             f"Ошибка отправки email на {recipient_email}: {str(e)}")
         return False
 
-
 # Функции для работы с базой данных
+
+
 def log_activity(user_id, action, entity_type=None, entity_id=None, details=None, ip_address=None):
     """Логирует действие пользователя в системе."""
     log = ActivityLog(
@@ -648,24 +682,34 @@ def profile():
 @app.route('/activate', methods=['GET', 'POST'])
 @csrf.exempt
 def activate():
+    app.logger.info(f"Вызвана функция activate с методом {request.method}")
+    app.logger.info(f"Параметры запроса: {request.args}")
+    app.logger.info(f"Заголовки запроса: {request.headers}")
+
     email_from_signup = request.args.get('email') or request.form.get('email')
+    app.logger.info(f"Email из параметров: {email_from_signup}")
+
     if request.method == 'POST':
+        app.logger.info("Обработка POST запроса")
         salon_id = request.form.get('salon_id')
         user_id = request.form.get('user_id')
+        app.logger.info(f"POST данные: salon_id={salon_id}, user_id={user_id}")
 
         # Добавьте проверку на пустые значения
         if not salon_id or not user_id:
             app.logger.error(
                 f"Пустые значения: salon_id={salon_id}, user_id={user_id}")
-            return render_template('activate.html', error_message="Отсутствует информация о салоне иои админастраторе салона")
+            return render_template('activate.html', error_message="Отсутствует информация о салоне или администраторе салона")
 
         # Убедитесь, что значения являются целыми числами
         try:
             salon_id = int(salon_id)
             user_id = int(user_id)
-        except ValueError:
+            app.logger.info(
+                f"Преобразованные значения: salon_id={salon_id}, user_id={user_id}")
+        except ValueError as e:
             app.logger.error(
-                f"Некорректные значения: salon_id={salon_id}, user_id={user_id}")
+                f"Некорректные значения: salon_id={salon_id}, user_id={user_id}, ошибка: {str(e)}")
             return render_template('activate.html', error_message="Некорректные параметры")
 
         if not email_from_signup:
@@ -675,7 +719,9 @@ def activate():
             user = User.query.get(user_id)
             if user:
                 email_from_signup = user.email
+                app.logger.info(f"Получен email из БД: {email_from_signup}")
             else:
+                app.logger.error(f"Пользователь с ID={user_id} не найден в БД")
                 return render_template('activate.html', error_message="Ошибка: Email пользователя не найден.")
 
         api_key = app.config['PARTNER_TOKEN']
@@ -685,37 +731,67 @@ def activate():
         callback_url = f"{base_url}/callback"
 
         app.logger.info(
-            f"Configuring webhooks: {webhook_urls} and callback: {callback_url}")
+            f"Конфигурация для активации: api_key={api_key[:5]}..., application_id={application_id}")
+        app.logger.info(
+            f"Настройка вебхуков: {webhook_urls} и callback: {callback_url}")
 
-        status, message, result_user_id = activate_salon_integration(
-            salon_id=salon_id,
-            user_id=user_id,
-            email=email_from_signup,  # Передаем email
-            api_key=api_key,
-            application_id=application_id,
-            webhook_urls=webhook_urls,
-            callback_url=callback_url
-        )
+        try:
+            app.logger.info(
+                f"Вызов функции activate_salon_integration с параметрами: salon_id={salon_id}, user_id={user_id}, email={email_from_signup}")
+            status, message, result_user_id = activate_salon_integration(
+                salon_id=salon_id,
+                user_id=user_id,
+                email=email_from_signup,  # Передаем email
+                api_key=api_key,
+                application_id=application_id,
+                webhook_urls=webhook_urls,
+                callback_url=callback_url
+            )
+            app.logger.info(
+                f"Результат activate_salon_integration: status={status}, message={message}, result_user_id={result_user_id}")
+        except Exception as e:
+            app.logger.error(
+                f"Исключение при вызове activate_salon_integration: {str(e)}", exc_info=True)
+            return render_template('activate.html', error_message=f"Внутренняя ошибка сервера: {str(e)}", salon_id=salon_id, user_id=user_id, email=email_from_signup)
 
         if status == 'error':
+            app.logger.error(f"Ошибка активации: {message}")
             return render_template('activate.html', error_message=message, salon_id=salon_id, user_id=user_id, email=email_from_signup)
         elif status == 'newly_activated':
+            app.logger.info(f"Успешная новая активация: {message}")
             # В message уже отформатированное сообщение с email
             return render_template('activate.html', success_message=message, show_profile_button=True, user_id=result_user_id)
         elif status == 'already_active':
+            app.logger.info(f"Интеграция уже была активна: {message}")
             return render_template('activate.html', already_active_message=message, show_profile_button=True, user_id=result_user_id)
+        else:
+            app.logger.warning(f"Неизвестный статус активации: {status}")
+            return render_template('activate.html', error_message="Неизвестный статус активации", salon_id=salon_id, user_id=user_id, email=email_from_signup)
     else:
+        app.logger.info("Обработка GET запроса")
         salon_id = request.args.get('salon_id')
         user_id = request.args.get('user_id')
+        app.logger.info(
+            f"GET параметры: salon_id={salon_id}, user_id={user_id}")
 
         # Добавьте проверку на пустые значения
         if not salon_id or not user_id:
             app.logger.error(
                 f"Пустые значения при GET-запросе: salon_id={salon_id}, user_id={user_id}")
             return render_template('activate.html', error_message="Отсутствуют обязательные параметры")
+
         if not email_from_signup:
             app.logger.warning(
                 "Отсутствует email пользователя при активации (GET)")
+            # Пытаемся получить email из БД
+            try:
+                user = User.query.get(int(user_id))
+                if user:
+                    email_from_signup = user.email
+                    app.logger.info(
+                        f"Получен email из БД для GET запроса: {email_from_signup}")
+            except Exception as e:
+                app.logger.error(f"Ошибка при получении email из БД: {str(e)}")
 
         app.logger.info(
             f"GET: Отображение страницы активации с salon_id={salon_id}, user_id={user_id}, email={email_from_signup}")
