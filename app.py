@@ -7,6 +7,7 @@ import bcrypt
 from flask_wtf.csrf import CSRFProtect
 from flask_migrate import Migrate
 from flask_mail import Mail, Message
+import subprocess
 import logging
 from logging.handlers import RotatingFileHandler
 import os
@@ -52,6 +53,39 @@ if not app.debug:
     app.logger.info('YCBot startup')
 
 
+def send_email_via_php(recipient, subject, body):
+    """
+    Отправляет email через PHP-скрипт с поддержкой DKIM
+    """
+    try:
+        logging.info(f"Отправка email через PHP на адрес {recipient}")
+
+        # Путь к PHP-скрипту
+        php_script = '/home/belpav/ycbot/mail_app/send_email.php'
+
+        # Запуск PHP-скрипта с параметрами, используя полный путь к PHP
+        cmd = ['/usr/bin/php', php_script, recipient, subject, body]
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=60)
+
+        # Проверка результата
+        if result.returncode == 0:
+            logging.info(
+                f"PHP-скрипт успешно отправил email: {result.stdout.strip()}")
+            return True
+        else:
+            logging.error(
+                f"Ошибка при отправке email через PHP: {result.stderr.strip() or result.stdout.strip()}")
+            return False
+    except subprocess.TimeoutExpired:
+        logging.error(
+            f"Превышено время ожидания при отправке email на {recipient}")
+        return False
+    except Exception as e:
+        logging.error(f"Непредвиденная ошибка при отправке email: {str(e)}")
+        return False
+
+
 def send_credentials_email(recipient_email, password):
     """Отправляет данные для входа пользователю."""
     try:
@@ -63,62 +97,43 @@ def send_credentials_email(recipient_email, password):
         app.logger.info(f"MAIL_USERNAME: {app.config['MAIL_USERNAME']}")
 
         subject = "Данные для входа в YCBot"
-        sender = app.config['MAIL_DEFAULT_SENDER']
         login_url = url_for('login', _external=True)
         body = f"""
-        Приветствуем!
-
-        Вы успешно активировали интеграцию YCBot.
-        Данные для входа в ваш личный кабинет:
-
-        Сайт: {login_url}
-        Логин: {recipient_email}
-        Пароль: {password}
-
-        С уважением,
-        Команда YCBot
+        <html>
+        <body>
+        <p>Приветствуем!</p>
+        
+        <p>Вы успешно активировали интеграцию YCBot.</p>
+        <p>Данные для входа в ваш личный кабинет:</p>
+        
+        <p>Сайт: <a href="{login_url}">{login_url}</a><br>
+        Логин: {recipient_email}<br>
+        Пароль: {password}</p>
+        
+        <p>С уважением,<br>
+        Команда YCBot</p>
+        </body>
+        </html>
         """
-        # Создаем объект сообщения
-        msg = Message(subject, sender=sender, recipients=[recipient_email])
-        msg.body = body
 
-        # Путь к приватному DKIM-ключу
-        dkim_private_key_path = '/home/belpav/ycbot/ycbot.ru.private'
+        # Вызов функции отправки через PHP
+        result = send_email_via_php(recipient_email, subject, body)
 
-        # Чтение приватного ключа
-        with open(dkim_private_key_path, 'rb') as key_file:
-            private_key = key_file.read()
-
-        # Получаем домен из адреса отправителя
-        domain = sender.split('@')[1]
-
-        # Создаем DKIM-подпись
-        headers = [b'From', b'To', b'Subject']
-        sig = dkim.sign(
-            message=msg.as_string().encode(),
-            selector=b'mail',
-            domain=domain.encode(),
-            privkey=private_key,
-            include_headers=headers
-        )
-
-        # Добавляем DKIM-Signature в заголовки сообщения
-        dkim_header = sig.decode().replace('\r\n', '')
-        msg.extra_headers = {'DKIM-Signature': dkim_header}
-
-        # Отправляем сообщение
-        mail.send(msg)
-        app.logger.info(
-            f"Учетные данные успешно отправлены на {recipient_email}")
-        return True
+        if result:
+            app.logger.info(
+                f"Учетные данные успешно отправлены на {recipient_email}")
+            return True
+        else:
+            app.logger.error(
+                f"Не удалось отправить учетные данные на {recipient_email}")
+            return False
     except Exception as e:
         app.logger.error(
             f"Ошибка отправки email на {recipient_email}: {str(e)}")
         return False
 
+
 # Функции для работы с базой данных
-
-
 def log_activity(user_id, action, entity_type=None, entity_id=None, details=None, ip_address=None):
     """Логирует действие пользователя в системе."""
     log = ActivityLog(
