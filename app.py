@@ -74,9 +74,11 @@ def send_email_via_php(recipient, subject, body):
                 f"PHP-скрипт успешно отправил email: {result.stdout.strip()}")
             return True
         else:
+            php_output = result.stdout.strip()
+            php_error = result.stderr.strip()
             logging.error(
-                f"Ошибка при отправке email через PHP: {result.stderr.strip() or result.stdout.strip()}")
-            return False
+                f"Ошибка при отправке email через PHP (returncode={result.returncode}). PHP stdout: '{php_output}'. PHP stderr: '{php_error}'")
+        return False
     except subprocess.TimeoutExpired:
         logging.error(
             f"Превышено время ожидания при отправке email на {recipient}")

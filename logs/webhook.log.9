@@ -1,0 +1,108 @@
+2025-04-21 00:38:00,425 INFO: Заголовки запроса: Host: ycbot.ru
+X-Real-Ip: 195.49.205.17
+Connection: close
+Content-Length: 149
+Cache-Control: max-age=0
+Sec-Ch-Ua: "Not A(Brand";v="8", "Chromium";v="132", "YaBrowser";v="25.2", "Yowser";v="2.5"
+Sec-Ch-Ua-Mobile: ?0
+Sec-Ch-Ua-Platform: "Windows"
+Origin: https://ycbot.ru
+Content-Type: application/x-www-form-urlencoded
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 YaBrowser/25.2.0.0 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+Sec-Fetch-Site: same-origin
+Sec-Fetch-Mode: navigate
+Sec-Fetch-User: ?1
+Sec-Fetch-Dest: document
+Referer: https://ycbot.ru/activate?salon_id=1231813&user_id=1&email=i@belpav.ru
+Accept-Encoding: gzip, deflate, br, zstd
+Accept-Language: ru,en;q=0.9
+Cookie: session=eyJjc3JmX3Rva2VuIjoiMmMxZmJhNDBhZjYxNTFhNWIxZWUwZjZkNjJmZTZjOTQ2ZjRhOWE5MyIsInVzZXJfaWQiOjF9.aAVpNA.On8CmclmbM8XS93mPaxI8svtby8
+
+ [in /home/belpav/ycbot/app.py:704]
+2025-04-21 00:38:00,428 INFO: Email из параметров: i@belpav.ru [in /home/belpav/ycbot/app.py:707]
+2025-04-21 00:38:00,428 INFO: Обработка POST запроса [in /home/belpav/ycbot/app.py:710]
+2025-04-21 00:38:00,429 INFO: POST данные: salon_id=1231813, user_id=1 [in /home/belpav/ycbot/app.py:713]
+2025-04-21 00:38:00,429 INFO: Преобразованные значения: salon_id=1231813, user_id=1 [in /home/belpav/ycbot/app.py:725]
+2025-04-21 00:38:00,430 INFO: Конфигурация для активации: api_key=ky358..., application_id=16726 [in /home/belpav/ycbot/app.py:750]
+2025-04-21 00:38:00,430 INFO: Настройка вебхуков: ['http://ycbot.ru/webhook'] и callback: http://ycbot.ru/callback [in /home/belpav/ycbot/app.py:752]
+2025-04-21 00:38:00,431 INFO: Вызов функции activate_salon_integration с параметрами: salon_id=1231813, user_id=1, email=i@belpav.ru [in /home/belpav/ycbot/app.py:756]
+2025-04-21 00:38:00,474 INFO: Создан новый салон в БД с ID=1 для YClients salon_id=1231813 [in /home/belpav/ycbot/app.py:831]
+2025-04-21 00:38:00,478 INFO: Начало процесса НОВОЙ активации интеграции для салона 1231813 (ID: 1) пользователем 1 [in /home/belpav/ycbot/app.py:891]
+2025-04-21 00:38:00,679 INFO: YClients API сообщил, что приложение уже было установлено для салона 1231813 [in /home/belpav/ycbot/app.py:910]
+2025-04-21 00:38:00,680 INFO: API YClients успешно активировал интеграцию (или она уже была активна) для салона 1231813 [in /home/belpav/ycbot/app.py:916]
+2025-04-21 00:38:00,690 INFO: Создана связь UserRole 'admin' для пользователя 1 и салона 1 [in /home/belpav/ycbot/app.py:936]
+2025-04-21 00:38:00,694 INFO: Статус салона ID=1 обновлен: is_active=True, integration_active=True [in /home/belpav/ycbot/app.py:949]
+2025-04-21 00:38:00,694 INFO: Отправка настроек интеграции в YClients для салона 1231813 [in /home/belpav/ycbot/app.py:953]
+2025-04-21 00:38:00,882 INFO: Настройки интеграции успешно отправлены для салона 1231813 [in /home/belpav/ycbot/app.py:960]
+2025-04-21 00:38:00,883 INFO: Результат activate_salon_integration: status=newly_activated, message=Интеграция успешно активирована. Данные для входа отправлены на ваш почтовый адрес: i@belpav.ru, result_user_id=1 [in /home/belpav/ycbot/app.py:767]
+2025-04-21 00:38:00,883 INFO: Успешная новая активация: Интеграция успешно активирована. Данные для входа отправлены на ваш почтовый адрес: i@belpav.ru [in /home/belpav/ycbot/app.py:778]
+2025-04-21 00:40:28,022 INFO: Webhook service startup [in /home/belpav/ycbot/app.py:39]
+2025-04-21 00:40:28,027 INFO: Webhook service startup [in /home/belpav/ycbot/app.py:39]
+2025-04-21 00:40:28,045 INFO: YCBot startup [in /home/belpav/ycbot/app.py:53]
+2025-04-21 00:40:28,046 INFO: YCBot startup [in /home/belpav/ycbot/app.py:53]
+2025-04-21 00:40:28,115 INFO: Webhook service startup [in /home/belpav/ycbot/app.py:39]
+2025-04-21 00:40:28,130 INFO: YCBot startup [in /home/belpav/ycbot/app.py:53]
+2025-04-21 00:41:02,559 INFO: Webhook service startup [in /home/belpav/ycbot/app.py:39]
+2025-04-21 00:41:02,568 INFO: YCBot startup [in /home/belpav/ycbot/app.py:53]
+2025-04-21 00:41:02,573 INFO: Webhook service startup [in /home/belpav/ycbot/app.py:39]
+2025-04-21 00:41:02,574 INFO: YCBot startup [in /home/belpav/ycbot/app.py:53]
+2025-04-21 00:41:02,635 INFO: Webhook service startup [in /home/belpav/ycbot/app.py:39]
+2025-04-21 00:41:02,642 INFO: YCBot startup [in /home/belpav/ycbot/app.py:53]
+2025-04-21 00:41:21,044 INFO: Получен запрос на /signup с параметрами: ImmutableMultiDict([('salon_id', '1231813'), ('user_data', 'eyJuYW1lIjogIlx1MDQxZlx1MDQzMFx1MDQzMlx1MDQzNVx1MDQzYiIsICJlbWFpbCI6ICJpQGJlbHBhdi5ydSIsICJwaG9uZSI6ICIrNzk3OTAyNzQ0NzkifQ=='), ('user_data_sign', 'de62d990c7354a47e422692caf138e85234c52d46ff463003448ab053ca894d1')]) [in /home/belpav/ycbot/app.py:420]
+2025-04-21 00:41:21,046 INFO: Заголовки запроса: Host: ycbot.ru
+X-Real-Ip: 195.49.205.17
+Connection: close
+Sec-Ch-Ua: "Not A(Brand";v="8", "Chromium";v="132", "YaBrowser";v="25.2", "Yowser";v="2.5"
+Sec-Ch-Ua-Mobile: ?0
+Sec-Ch-Ua-Platform: "Windows"
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 YaBrowser/25.2.0.0 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+Sec-Fetch-Site: none
+Sec-Fetch-Mode: navigate
+Sec-Fetch-User: ?1
+Sec-Fetch-Dest: document
+Accept-Encoding: gzip, deflate, br, zstd
+Accept-Language: ru,en;q=0.9
+Cookie: session=.eJxNj9EKgzAMRX9F8izDtLWovzJF2pqwsbGB0Sfx36dxoC_nJrnhhizQ8zvIgwSa-wLZtAnInBKJQA7tXDg0O13MVKwSd1pWljqptB6UpKvWHM3Fjsrqb2eXqOqsnTljbTqO3qBbuxySjNxP3xd9oAGTkGNwRWCPJYYyIlHBfvCGyafaeXahDrXd3piFxv45QIPrDwsyRao.aAVpPA.5lAhFiGm6bI4VC4vufzmSmc_3G0
+
+ [in /home/belpav/ycbot/app.py:421]
+2025-04-21 00:41:21,050 INFO: Получены данные пользователя: eyJuYW1lIjogIlx1MDQxZlx1MDQzMFx1MDQzMlx1MDQzNVx1MDQzYiIsICJlbWFpbCI6ICJpQGJlbHBhdi5ydSIsICJwaG9uZSI6ICIrNzk3OTAyNzQ0NzkifQ== [in /home/belpav/ycbot/app.py:438]
+2025-04-21 00:41:21,050 INFO: Декодированные данные пользователя: {'name': 'Павел', 'email': 'i@belpav.ru', 'phone': '+79790274479'} [in /home/belpav/ycbot/app.py:443]
+2025-04-21 00:41:21,465 INFO: Начинаем отправку email на i@belpav.ru [in /home/belpav/ycbot/app.py:94]
+2025-04-21 00:41:21,466 INFO: MAIL_SERVER: smtp.timeweb.ru [in /home/belpav/ycbot/app.py:95]
+2025-04-21 00:41:21,466 INFO: MAIL_PORT: 465 [in /home/belpav/ycbot/app.py:96]
+2025-04-21 00:41:21,466 INFO: MAIL_USE_SSL: True [in /home/belpav/ycbot/app.py:97]
+2025-04-21 00:41:21,466 INFO: MAIL_USE_TLS: False [in /home/belpav/ycbot/app.py:98]
+2025-04-21 00:41:21,467 INFO: MAIL_USERNAME: mail@ycbot.ru [in /home/belpav/ycbot/app.py:99]
+2025-04-21 00:41:21,609 ERROR: Не удалось отправить учетные данные на i@belpav.ru [in /home/belpav/ycbot/app.py:129]
+2025-04-21 00:41:21,609 INFO: Перенаправление на activate с salon_id=1231813, user_id=1, email=i@belpav.ru [in /home/belpav/ycbot/app.py:485]
+2025-04-21 00:41:21,661 INFO: Вызвана функция activate с методом GET [in /home/belpav/ycbot/app.py:702]
+2025-04-21 00:41:21,663 INFO: Параметры запроса: ImmutableMultiDict([('salon_id', '1231813'), ('user_id', '1'), ('email', 'i@belpav.ru')]) [in /home/belpav/ycbot/app.py:703]
+2025-04-21 00:41:21,663 INFO: Заголовки запроса: Host: ycbot.ru
+X-Real-Ip: 195.49.205.17
+Connection: close
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 YaBrowser/25.2.0.0 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+Sec-Fetch-Site: none
+Sec-Fetch-Mode: navigate
+Sec-Fetch-User: ?1
+Sec-Fetch-Dest: document
+Sec-Ch-Ua: "Not A(Brand";v="8", "Chromium";v="132", "YaBrowser";v="25.2", "Yowser";v="2.5"
+Sec-Ch-Ua-Mobile: ?0
+Sec-Ch-Ua-Platform: "Windows"
+Accept-Encoding: gzip, deflate, br, zstd
+Accept-Language: ru,en;q=0.9
+Cookie: session=.eJxNj9EKgzAMRX9F8izDtLWovzJF2pqwsbGB0Sfx36dxoC_nJrnhhizQ8zvIgwSa-wLZtAnInBKJQA7tXDg0O13MVKwSd1pWljqptB6UpKvWHM3Fjsrqb2eXqOqsnTljbTqO3qBbuxySjNxP3xd9oAGTkGNwRWCPJYYyIlHBfvCGyafaeXahDrXd3piFxv45QIPrDwsyRao.aAVpPA.5lAhFiGm6bI4VC4vufzmSmc_3G0
+
+ [in /home/belpav/ycbot/app.py:704]
+2025-04-21 00:41:21,664 INFO: Email из параметров: i@belpav.ru [in /home/belpav/ycbot/app.py:707]
+2025-04-21 00:41:21,664 INFO: Обработка GET запроса [in /home/belpav/ycbot/app.py:788]
+2025-04-21 00:41:21,664 INFO: GET параметры: salon_id=1231813, user_id=1 [in /home/belpav/ycbot/app.py:791]
+2025-04-21 00:41:21,665 INFO: GET: Отображение страницы активации с salon_id=1231813, user_id=1, email=i@belpav.ru [in /home/belpav/ycbot/app.py:813]
+2025-04-21 00:41:21,962 ERROR: Unhandled exception: 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again. [in /home/belpav/ycbot/app.py:1210]
+2025-04-21 00:41:23,097 INFO: Вызвана функция activate с методом POST [in /home/belpav/ycbot/app.py:702]
+2025-04-21 00:43:10,694 ERROR: Unhandled exception: 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again. [in /home/belpav/ycbot/app.py:1210]

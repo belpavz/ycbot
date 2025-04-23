@@ -1,0 +1,31 @@
+2025-04-21 00:31:17,547 INFO: Получен запрос на /signup с параметрами: ImmutableMultiDict([('salon_id', '1231813'), ('user_data', 'eyJuYW1lIjogIlx1MDQxZlx1MDQzMFx1MDQzMlx1MDQzNVx1MDQzYiIsICJlbWFpbCI6ICJpQGJlbHBhdi5ydSIsICJwaG9uZSI6ICIrNzk3OTAyNzQ0NzkifQ=='), ('user_data_sign', 'de62d990c7354a47e422692caf138e85234c52d46ff463003448ab053ca894d1')]) [in /home/belpav/ycbot/app.py:420]
+2025-04-21 00:31:17,554 INFO: Заголовки запроса: Host: ycbot.ru
+X-Real-Ip: 195.49.205.17
+Connection: close
+Sec-Ch-Ua: "Not A(Brand";v="8", "Chromium";v="132", "YaBrowser";v="25.2", "Yowser";v="2.5"
+Sec-Ch-Ua-Mobile: ?0
+Sec-Ch-Ua-Platform: "Windows"
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 YaBrowser/25.2.0.0 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+Sec-Fetch-Site: none
+Sec-Fetch-Mode: navigate
+Sec-Fetch-User: ?1
+Sec-Fetch-Dest: document
+Accept-Encoding: gzip, deflate, br, zstd
+Accept-Language: ru,en;q=0.9
+Cookie: session=.eJxNj9EKgzAMRX9F8izDtLWovzJF2pqwsbGB0Sfx36dxoC_nJrnhhizQ8zvIgwSa-wLZtAnInBKJQA7tXDg0O13MVKwSd1pWljqptB6UpKvWHM3Fjsrqb2eXqOqsnTljbTqO3qBbuxySjNxP3xd9oAGTkGNwRWCPJYYyIlHBfvCGyafaeXahDrXd3piFxv45QIPrDwsyRao.aAVmJQ.Invarjus5nOdBF8UPA87fd3WFfw
+
+ [in /home/belpav/ycbot/app.py:421]
+2025-04-21 00:31:17,555 INFO: Получены данные пользователя: eyJuYW1lIjogIlx1MDQxZlx1MDQzMFx1MDQzMlx1MDQzNVx1MDQzYiIsICJlbWFpbCI6ICJpQGJlbHBhdi5ydSIsICJwaG9uZSI6ICIrNzk3OTAyNzQ0NzkifQ== [in /home/belpav/ycbot/app.py:438]
+2025-04-21 00:31:17,556 INFO: Декодированные данные пользователя: {'name': 'Павел', 'email': 'i@belpav.ru', 'phone': '+79790274479'} [in /home/belpav/ycbot/app.py:443]
+2025-04-21 00:31:17,985 INFO: Начинаем отправку email на i@belpav.ru [in /home/belpav/ycbot/app.py:94]
+2025-04-21 00:31:17,986 INFO: MAIL_SERVER: smtp.timeweb.ru [in /home/belpav/ycbot/app.py:95]
+2025-04-21 00:31:17,986 INFO: MAIL_PORT: 465 [in /home/belpav/ycbot/app.py:96]
+2025-04-21 00:31:17,988 INFO: MAIL_USE_SSL: True [in /home/belpav/ycbot/app.py:97]
+2025-04-21 00:31:17,988 INFO: MAIL_USE_TLS: False [in /home/belpav/ycbot/app.py:98]
+2025-04-21 00:31:17,988 INFO: MAIL_USERNAME: mail@ycbot.ru [in /home/belpav/ycbot/app.py:99]
+2025-04-21 00:31:18,157 ERROR: Не удалось отправить учетные данные на i@belpav.ru [in /home/belpav/ycbot/app.py:129]
+2025-04-21 00:31:18,158 INFO: Перенаправление на activate с salon_id=1231813, user_id=1, email=i@belpav.ru [in /home/belpav/ycbot/app.py:485]
+2025-04-21 00:31:18,416 ERROR: Unhandled exception: 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again. [in /home/belpav/ycbot/app.py:1210]
+2025-04-21 00:31:21,896 ERROR: Unhandled exception: 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again. [in /home/belpav/ycbot/app.py:1210]
